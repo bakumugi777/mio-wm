@@ -2,8 +2,9 @@
 /.direnv/
 /.envrc.local
 *.log
-/.agents/
-/.codex/
-/memo/
-/AGENTS.md/
-
+.agents/
+.codex/
+memo/
+AGENTS.md/
+core
+core.*
