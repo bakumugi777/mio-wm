@@ -1,0 +1,122 @@
+// Mio configuration example.
+// Commands are executed once when Mio starts. Each quoted value is one argv item.
+spawn-at-startup "waybar"
+// spawn-at-startup "kaname" "--applications"
+
+appearance {
+    background-color "#FFFFFF"
+    window-border-width 1
+    window-border-color "#FFFFFF2E"
+    focus-indicator-width 320
+    focus-indicator-height 2
+    focus-indicator-color "#FFFFFF"
+    // Zero disables clipping.
+    corner-radius 16
+    // Logical pixels inset from every edge. Adjacent Windows have twice this gap.
+    // Maximized and fullscreen Windows are not inset.
+    gaps 25 
+    opacity 1.0
+    // Ctrl+Alt+O alternates between these two values.
+    opacity-toggle 1.0 0.8
+}
+
+effects {
+    // Dual Kawase blur: more passes are smoother but cost more GPU work.
+    blur-passes 3
+    blur-offset 2.0
+    // Zero radius disables shadows. Offset is horizontal then vertical.
+    shadow-radius 16
+    shadow-offset 0 0
+    shadow-color "#00000040"
+    // Fast pointer movement leaves a short wake; slow precise movement stays quiet.
+    cursor-wake true
+    cursor-wake-threshold 1600
+    cursor-wake-strength 0.032
+    cursor-wake-width 8.5
+    // Milliseconds before an undisturbed wake becomes idle.
+    cursor-wake-duration 1400
+    // Water-like Window opening and closing transition.
+    window-transition "water"
+    window-transition-duration 420
+}
+
+animation {
+    // Zero disables animation; larger values settle more quickly.
+    speed 1.0
+}
+
+camera {
+    viewport 8 8
+}
+
+placement {
+    initial-size 8 8
+}
+
+// Mouse chords are ordered: hold the first button, then press the next one.
+mouse {
+    camera-pan "right"
+    camera-zoom "right"
+    move-window "right" "left"
+    resize-window "left"
+    // Double-click to restore placement.initial-size and reveal the Window.
+    reset-window "right" clicks=2
+    toggle-floating "right" "middle"
+    place-next "middle"
+    // A stopped click sequence centers only when it has exactly this count.
+    center-window "right" "left" clicks=1
+    // Hold the first button and click the second `clicks` times. This must match
+    // move-window so pointer motion can disambiguate closing from dragging.
+    close-window "right" "left" clicks=3
+}
+
+// A short right-click within 24 logical pixels of an edge runs this argv directly.
+edge-command "bottom" "wofi" "--show" "drun"
+
+// Declaring any bind replaces the built-in binding set, so list every binding
+// that should remain available.
+bind "Alt+Left" "focus-left"
+bind "Alt+Right" "focus-right"
+bind "Alt+Up" "focus-up"
+bind "Alt+Down" "focus-down"
+bind "Ctrl+Alt+Left" "camera-left"
+bind "Ctrl+Alt+Right" "camera-right"
+bind "Ctrl+Alt+Up" "camera-up"
+bind "Ctrl+Alt+Down" "camera-down"
+bind "Alt+Shift+Left" "camera-nudge-left"
+bind "Alt+Shift+Right" "camera-nudge-right"
+bind "Alt+Shift+Up" "camera-nudge-up"
+bind "Alt+Shift+Down" "camera-nudge-down"
+bind "Ctrl+Shift+Left" "move-left"
+bind "Ctrl+Shift+Right" "move-right"
+bind "Ctrl+Shift+Up" "move-up"
+bind "Ctrl+Shift+Down" "move-down"
+bind "Ctrl+Alt+Shift+Left" "resize-left"
+bind "Ctrl+Alt+Shift+Right" "resize-right"
+bind "Ctrl+Alt+Shift+Up" "resize-up"
+bind "Ctrl+Alt+Shift+Down" "resize-down"
+// The next successfully opened Window consumes one of these directions.
+bind "Ctrl+Alt+Shift+H" "place-next-left"
+bind "Ctrl+Alt+Shift+L" "place-next-right"
+bind "Ctrl+Alt+Shift+K" "place-next-up"
+bind "Ctrl+Alt+Shift+J" "place-next-down"
+bind "Ctrl+Alt+F" "toggle-floating"
+bind "Ctrl+Alt+N" "cycle-output"
+bind "Ctrl+Alt+Enter" "toggle-fullscreen"
+bind "Ctrl+Alt+M" "toggle-maximized"
+bind "Ctrl+Alt+Q" "close"
+bind "Ctrl+Alt+O" "toggle-opacity"
+bind "Ctrl+Alt+B" "toggle-blur"
+bind "Ctrl+Alt+W" "toggle-cursor-wake"
+bind "Ctrl+Alt+Shift+O" "clear-opacity"
+bind "Ctrl+Alt+V" "toggle-overview"
+bind "Ctrl+Alt+S" "select-overview"
+bind "Ctrl+Alt+R" "reload-config"
+
+// Rules use an exact app-id match. The property is applied per Window.
+window-rule {
+    match app-id="foot"
+    opacity 1.0
+    floating false
+    blur false
+}

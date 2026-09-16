@@ -1,0 +1,9 @@
+/target/
+/.direnv/
+/.envrc.local
+*.log
+/.agents/
+/.codex/
+/memo/
+/AGENTS.md/
+

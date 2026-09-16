@@ -1,0 +1,11 @@
+[package]
+name = "mio-core"
+description = "Smithay-independent world model for the Mio compositor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+

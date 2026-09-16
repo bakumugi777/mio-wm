@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+mioctl_command=${MIOCTL:-mioctl}
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "mio-windows: jq is required" >&2
+    exit 1
+fi
+
+"$mioctl_command" state | jq -ce --arg mioctl "$mioctl_command" '
+    if .ok != true then
+        error(.error // "Mio state request failed")
+    else
+        .windows[] |
+        {
+            id: ("mio-window-" + (.id | tostring)),
+            type: "command",
+            label: (.title // .app_id // ("Window " + (.id | tostring))),
+            description: (
+                (if .focused then "Focused · " else "" end)
+                + (.app_id // "unknown") + " · "
+                + (.rect.x | tostring) + "," + (.rect.y | tostring)
+                + " · " + (.rect.width | tostring) + "×" + (.rect.height | tostring)
+            ),
+            icon: "window",
+            command: [$mioctl, "focus", (.id | tostring)]
+        }
+    end
+'

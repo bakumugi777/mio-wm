@@ -1,0 +1,10 @@
+{
+  "id": "mio-windows",
+  "type": "provider",
+  "label": "Mio Windows",
+  "description": "Focus a Window in Mio's World",
+  "icon": "focus-windows-symbolic",
+  "key": "w",
+  "command": ["mio-kaname-windows"],
+  "inputFormat": "jsonl"
+}

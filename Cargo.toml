@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "crates/mio-core",
+    "crates/mio-compositor",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+calloop = { version = "0.14.0", features = ["signals"] }
+kdl = "=4.7.1"
+mio-core = { path = "crates/mio-core" }
+smithay = { git = "https://github.com/Smithay/smithay.git", rev = "f217f62bbe3f5c414997b91d1fe9caeb5e8662d3", default-features = false, features = [
+    "backend_drm",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_winit",
+    "desktop",
+    "renderer_gl",
+    "use_system_lib",
+    "wayland_frontend",
+] }
+smithay-drm-extras = { git = "https://github.com/Smithay/smithay.git", rev = "f217f62bbe3f5c414997b91d1fe9caeb5e8662d3" }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+xkbcommon = "0.9.0"
+xcursor = "0.3.11"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
