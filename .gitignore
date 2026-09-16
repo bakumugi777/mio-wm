@@ -6,5 +6,5 @@
 .codex/
 memo/
 AGENTS.md/
-core
-core.*
+/core
+/core.*
