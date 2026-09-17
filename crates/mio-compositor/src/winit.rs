@@ -1,3 +1,10 @@
+// Winit and GLES expose narrower scalar types than Mio's logical model.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -343,8 +350,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                     }
                     let cursor_status = state
                         .cursor_override
-                        .map(CursorImageStatus::Named)
-                        .unwrap_or_else(|| state.cursor_image_status.clone());
+                        .map_or_else(|| state.cursor_image_status.clone(), CursorImageStatus::Named);
                     apply_host_cursor(backend.window(), &cursor_status);
                     let size = backend.window_size();
                     let damage = Rectangle::from_size(size);
@@ -1275,6 +1281,7 @@ fn upper_layer_element_count(renderer: &mut GlesRenderer, output: &Output) -> us
         .sum()
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_virtual_outputs(
     state: &MioState,
     renderer: &mut GlesRenderer,
@@ -1527,6 +1534,7 @@ fn closing_visual_progress(elapsed: Duration, duration: Duration) -> f32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use std::time::Duration;
 

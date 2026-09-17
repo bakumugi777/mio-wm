@@ -1,5 +1,13 @@
 //! Direct single-GPU DRM/KMS backend.
 
+// DRM, XCursor, and GLES expose narrower scalar types than Mio's logical model.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -302,6 +310,7 @@ impl DirectEventDiagnostics {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn init(
     event_loop: &mut EventLoop<CalloopData>,
     data: &mut CalloopData,
@@ -429,7 +438,7 @@ pub fn init(
     let watchdog_diagnostics = Rc::clone(&event_diagnostics);
     event_loop.handle().insert_source(
         Timer::from_duration(Duration::from_millis(100)),
-        move |_, _, _| {
+        move |_, &mut (), _| {
             watchdog_diagnostics.borrow_mut().watchdog(Instant::now());
             TimeoutAction::ToDuration(Duration::from_millis(100))
         },
@@ -441,7 +450,7 @@ pub fn init(
     let repaint_backend = Rc::clone(&backend);
     event_loop.handle().insert_source(
         Timer::from_duration(Duration::from_millis(16)),
-        move |_, _, data| {
+        move |_, &mut (), data| {
             let should_repaint = {
                 let mut backend = repaint_backend.borrow_mut();
                 if backend.repaint_scheduled
@@ -512,7 +521,7 @@ pub fn init(
     let mut input_session = session.clone();
     event_loop
         .handle()
-        .insert_source(input_backend, move |event, _, data| {
+        .insert_source(input_backend, move |event, &mut (), data| {
             let callback_started = Instant::now();
             if !matches!(
                 event,
@@ -561,12 +570,11 @@ pub fn init(
     let hotplug_backend = Rc::clone(&backend);
     event_loop
         .handle()
-        .insert_source(udev, move |event, _, data| {
+        .insert_source(udev, move |event, &mut (), data| {
             let relevant = match event {
-                UdevEvent::Changed { device_id } | UdevEvent::Removed { device_id } => {
-                    device_id == hotplug_backend.borrow().node.dev_id()
-                }
-                UdevEvent::Added { device_id, .. } => {
+                UdevEvent::Changed { device_id }
+                | UdevEvent::Removed { device_id }
+                | UdevEvent::Added { device_id, .. } => {
                     device_id == hotplug_backend.borrow().node.dev_id()
                 }
             };
@@ -624,10 +632,10 @@ fn load_cursors() -> (HashMap<CursorIcon, SoftwareCursor>, String, u32) {
             cursors.insert(icon, cursor);
         }
     }
-    if !cursors.contains_key(&CursorIcon::Default) {
+    cursors.entry(CursorIcon::Default).or_insert_with(|| {
         warn!(%theme_name, "default XCursor unavailable; using built-in pointer");
-        cursors.insert(CursorIcon::Default, built_in_cursor());
-    }
+        built_in_cursor()
+    });
     (cursors, theme_name, requested_size)
 }
 
@@ -1037,6 +1045,7 @@ impl DirectBackend {
         self.render(&mut data.state);
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render(&mut self, state: &mut crate::state::MioState) {
         if self.frame_pending || !self.session.is_active() || self.scanout.is_none() {
             return;
@@ -1277,10 +1286,10 @@ impl DirectBackend {
             .get_pointer()
             .expect("Mio always creates a pointer");
         let pointer_location = pointer.current_location();
-        let cursor_status = state
-            .cursor_override
-            .map(CursorImageStatus::Named)
-            .unwrap_or_else(|| state.cursor_image_status.clone());
+        let cursor_status = state.cursor_override.map_or_else(
+            || state.cursor_image_status.clone(),
+            CursorImageStatus::Named,
+        );
         match cursor_status {
             CursorImageStatus::Surface(surface) if surface.alive() => {
                 self.cursor_animation = None;
@@ -1305,7 +1314,7 @@ impl DirectBackend {
                     );
                 elements.extend(cursor_elements.into_iter().map(DirectRenderElement::from));
             }
-            CursorImageStatus::Hidden => {
+            CursorImageStatus::Hidden | CursorImageStatus::Surface(_) => {
                 self.cursor_animation = None;
             }
             CursorImageStatus::Named(icon) => {
@@ -1348,9 +1357,6 @@ impl DirectBackend {
                     Ok(cursor) => elements.push(cursor.into()),
                     Err(error) => warn!(%error, "failed to import software cursor"),
                 }
-            }
-            CursorImageStatus::Surface(_) => {
-                self.cursor_animation = None;
             }
         }
     }
@@ -1459,6 +1465,7 @@ impl DirectBackend {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use std::time::Duration;
 

@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     collections::VecDeque,
     ffi::CString,
-    mem::size_of,
+    mem::{size_of, size_of_val},
     time::{Duration, Instant},
 };
 
@@ -190,6 +190,7 @@ pub struct FocusGlowOptions {
 }
 
 impl FocusGlowElement {
+    #[allow(clippy::cast_precision_loss)] // Renderer uniforms use f32 pixel measures.
     pub fn new(
         id: Id,
         window_geometry: Rectangle<i32, Logical>,
@@ -230,6 +231,7 @@ impl Element for FocusGlowElement {
         &self.id
     }
 
+    #[allow(clippy::cast_sign_loss)] // Bit patterns intentionally feed an opaque commit hash.
     fn current_commit(&self) -> CommitCounter {
         let mut hash = self.geometry.loc.x as usize ^ self.geometry.loc.y as usize;
         hash = hash.rotate_left(7) ^ self.geometry.size.w as usize;
@@ -974,6 +976,7 @@ impl CursorWakeTrail {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)] // Normalized animation age is a shader f32.
 fn smoothed_wake_segments(
     samples: &VecDeque<CursorWakeSample>,
     now: Instant,
@@ -1000,6 +1003,7 @@ fn smoothed_wake_segments(
     result
 }
 
+#[allow(clippy::borrow_as_ptr)] // GLES FFI requires raw out-pointers.
 fn compile_ribbon_program(renderer: &mut GlesRenderer) -> Result<RibbonProgram, GlesError> {
     renderer.with_context(|gl| unsafe {
         fn compile(gl: &ffi::Gles2, kind: u32, source: &str) -> Result<u32, GlesError> {
@@ -1151,6 +1155,7 @@ fn capture_cursor_wake_screen(
     frame.blit_to(&mut target, area, area, TextureFilter::Linear)
 }
 
+#[allow(clippy::cast_precision_loss)] // Small bounded mesh indices become shader coordinates.
 fn build_ribbon_vertices(
     samples: &[(f32, f32, f32, f32)],
     wake_width: f32,
@@ -1223,7 +1228,14 @@ fn cursor_wake_fade(age: f32) -> f32 {
     1.0 - smooth_progress
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+#[allow(
+    clippy::borrow_as_ptr,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines
+)]
 fn render_ribbon(
     frame: &mut GlesFrame<'_, '_>,
     screen: &GlesTexture,
@@ -1277,7 +1289,7 @@ fn render_ribbon(
             gl.BindBuffer(ffi::ARRAY_BUFFER, buffer);
             gl.BufferData(
                 ffi::ARRAY_BUFFER,
-                (vertices.len() * size_of::<RibbonVertex>()) as isize,
+                size_of_val(vertices) as isize,
                 vertices.as_ptr().cast(),
                 ffi::STREAM_DRAW,
             );
@@ -1938,6 +1950,7 @@ pub struct BackdropBlurElement {
 }
 
 impl BackdropBlurElement {
+    #[allow(clippy::cast_sign_loss)] // Bit patterns intentionally feed an opaque commit hash.
     pub fn new(
         id: Id,
         geometry: Rectangle<i32, Logical>,
@@ -2244,12 +2257,13 @@ fn blur_half_pixel(source_width: i32, source_height: i32) -> (f32, f32) {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
     #[test]
     fn blur_sampling_uses_the_source_texel_grid() {
-        assert_eq!(blur_half_pixel(800, 600), (0.000625, 1.0 / 1200.0));
+        assert_eq!(blur_half_pixel(800, 600), (0.000_625, 1.0 / 1200.0));
         assert_eq!(blur_half_pixel(0, 0), (0.5, 0.5));
     }
 

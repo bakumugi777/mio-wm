@@ -153,6 +153,7 @@ impl MioState {
         );
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_pointer_position(
         &mut self,
         requested_position: smithay::utils::Point<f64, smithay::utils::Logical>,
@@ -313,6 +314,7 @@ impl MioState {
         }
     }
 
+    #[allow(clippy::cast_possible_wrap)] // VT keysyms are validated to the positive 1..=12 range.
     fn process_keyboard<B: InputBackend>(
         &mut self,
         event: &B::KeyboardKeyEvent,
@@ -679,6 +681,7 @@ impl MioState {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)] // Unit Grid deltas are exact in this practical range.
     fn move_focused_window(&mut self, direction: Direction) {
         let Some(id) = self.world.focused() else {
             return;
@@ -756,6 +759,7 @@ impl MioState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn process_pointer_button<B, E>(&mut self, event: &E)
     where
         B: InputBackend,
@@ -1380,7 +1384,7 @@ impl MioState {
             }
         }
         self.set_interactive_resize_preview(resize.id, preview);
-        let pointer_dx = f64::from(if resize.edges.left {
+        let follower_delta_x = f64::from(if resize.edges.left {
             preview.x.saturating_sub(resize.screen.x)
         } else {
             preview
@@ -1388,7 +1392,7 @@ impl MioState {
                 .saturating_add(preview.width)
                 .saturating_sub(resize.screen.x.saturating_add(resize.screen.width))
         });
-        let pointer_dy = f64::from(if resize.edges.top {
+        let follower_delta_y = f64::from(if resize.edges.top {
             preview.y.saturating_sub(resize.screen.y)
         } else {
             preview
@@ -1399,7 +1403,7 @@ impl MioState {
         for follower in resize.followers {
             self.set_interactive_move_preview(
                 follower.id,
-                follower_preview_from_drag(follower, pointer_dx, pointer_dy),
+                follower_preview_from_drag(follower, follower_delta_x, follower_delta_y),
             );
         }
     }
@@ -1420,9 +1424,9 @@ impl MioState {
         let local_y = position.y - geometry.loc.y;
         let edges = ResizeEdges {
             left: local_x <= WINDOW_RESIZE_EDGE,
-            right: f64::from(geometry.size.w) - local_x <= WINDOW_RESIZE_EDGE,
+            right: geometry.size.w - local_x <= WINDOW_RESIZE_EDGE,
             top: local_y <= WINDOW_RESIZE_EDGE,
-            bottom: f64::from(geometry.size.h) - local_y <= WINDOW_RESIZE_EDGE,
+            bottom: geometry.size.h - local_y <= WINDOW_RESIZE_EDGE,
         };
         (edges.left || edges.right || edges.top || edges.bottom).then_some((id, edges))
     }
@@ -1441,6 +1445,7 @@ impl MioState {
         };
     }
 
+    #[allow(clippy::cast_precision_loss)] // Grid drag deltas cross into continuous World coordinates.
     fn finish_window_drag(&mut self) {
         let Some(drag) = self.pending_window_drag.take() else {
             return;
@@ -1669,6 +1674,11 @@ fn resize_cursor(edges: ResizeEdges) -> CursorIcon {
     }
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 fn resized_rect_from_drag(
     rect: mio_core::WorldRect,
     edges: ResizeEdges,
@@ -1893,10 +1903,9 @@ fn edge_wheel_focus_direction(
         return None;
     }
 
-    let scroll = if vertical != 0.0 {
-        vertical
-    } else {
-        horizontal
+    let scroll = match vertical.total_cmp(&0.0) {
+        std::cmp::Ordering::Equal => horizontal,
+        std::cmp::Ordering::Less | std::cmp::Ordering::Greater => vertical,
     };
     match (edge?, scroll.total_cmp(&0.0)) {
         (Direction::Left | Direction::Right, std::cmp::Ordering::Less) => Some(Direction::Left),
@@ -1909,8 +1918,8 @@ fn edge_wheel_focus_direction(
 
 #[allow(clippy::cast_precision_loss)]
 fn pointer_delta_to_camera_pan(
-    pointer_dx: f64,
-    pointer_dy: f64,
+    horizontal_delta: f64,
+    vertical_delta: f64,
     output_size: (i32, i32),
     viewport: GridSize,
     zoom: f64,
@@ -1918,15 +1927,15 @@ fn pointer_delta_to_camera_pan(
     let pixels_x = f64::from(output_size.0.max(1));
     let pixels_y = f64::from(output_size.1.max(1));
     (
-        -pointer_dx * viewport.width() as f64 / (pixels_x * zoom),
-        -pointer_dy * viewport.height() as f64 / (pixels_y * zoom),
+        -horizontal_delta * viewport.width() as f64 / (pixels_x * zoom),
+        -vertical_delta * viewport.height() as f64 / (pixels_y * zoom),
     )
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub(crate) fn pointer_delta_to_grid_move(
-    pointer_dx: f64,
-    pointer_dy: f64,
+    horizontal_delta: f64,
+    vertical_delta: f64,
     output_size: (i32, i32),
     viewport: GridSize,
     zoom: f64,
@@ -1934,20 +1943,26 @@ pub(crate) fn pointer_delta_to_grid_move(
     let pixels_x = f64::from(output_size.0.max(1));
     let pixels_y = f64::from(output_size.1.max(1));
     (
-        (pointer_dx * viewport.width() as f64 / (pixels_x * zoom)).round() as i64,
-        (pointer_dy * viewport.height() as f64 / (pixels_y * zoom)).round() as i64,
+        (horizontal_delta * viewport.width() as f64 / (pixels_x * zoom)).round() as i64,
+        (vertical_delta * viewport.height() as f64 / (pixels_y * zoom)).round() as i64,
     )
 }
 
 #[allow(clippy::cast_possible_truncation)]
-pub(crate) fn continuous_drag_screen_delta(pointer_dx: f64, pointer_dy: f64) -> (i32, i32) {
-    (pointer_dx.round() as i32, pointer_dy.round() as i32)
+pub(crate) fn continuous_drag_screen_delta(
+    horizontal_delta: f64,
+    vertical_delta: f64,
+) -> (i32, i32) {
+    (
+        horizontal_delta.round() as i32,
+        vertical_delta.round() as i32,
+    )
 }
 
 #[allow(clippy::cast_precision_loss)]
 fn pointer_delta_to_world_move(
-    pointer_dx: f64,
-    pointer_dy: f64,
+    horizontal_delta: f64,
+    vertical_delta: f64,
     output_size: (i32, i32),
     viewport: GridSize,
     zoom: f64,
@@ -1955,8 +1970,8 @@ fn pointer_delta_to_world_move(
     let pixels_x = f64::from(output_size.0.max(1));
     let pixels_y = f64::from(output_size.1.max(1));
     (
-        pointer_dx * viewport.width() as f64 / (pixels_x * zoom),
-        pointer_dy * viewport.height() as f64 / (pixels_y * zoom),
+        horizontal_delta * viewport.width() as f64 / (pixels_x * zoom),
+        vertical_delta * viewport.height() as f64 / (pixels_y * zoom),
     )
 }
 
@@ -1980,6 +1995,7 @@ fn key_from_keysym(symbol: Keysym) -> Option<Key> {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod edge_tests {
     use mio_core::{GridRect, WorldRect};
     use smithay::utils::{Logical, Rectangle};

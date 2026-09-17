@@ -1179,6 +1179,7 @@ impl fmt::Display for ConfigError {
 impl Error for ConfigError {}
 
 #[cfg(test)]
+#[allow(clippy::float_cmp, clippy::too_many_lines)]
 mod tests {
     use super::*;
 

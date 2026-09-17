@@ -160,7 +160,7 @@ pub struct MioState {
     pub world: World,
     pub managed_windows: Vec<ManagedWindow>,
     /// Renderer-adapter notifications for toplevels which disappeared without
-    /// going through Mio's CloseWindow action.  The renderer pairs these with
+    /// going through Mio's `CloseWindow` action. The renderer pairs these with
     /// its last per-window snapshot; this is deliberately not World state.
     pub(crate) destroyed_window_transitions: Vec<DestroyedWindowTransition>,
     pub(crate) outputs: BTreeMap<OutputId, smithay::output::Output>,
@@ -235,6 +235,7 @@ pub(crate) struct PendingCloseClick {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::struct_excessive_bools)] // Four independent physical edges are the value itself.
 pub(crate) struct ResizeEdges {
     pub(crate) left: bool,
     pub(crate) right: bool,
@@ -304,6 +305,7 @@ impl XdgClientPing {
 }
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)] // Independent lifecycle facts; not an implicit mode.
 pub struct ManagedWindow {
     pub id: WindowId,
     pub window: RenderWindow,
@@ -492,10 +494,7 @@ impl RenderWindow {
         program: Option<&smithay::backend::renderer::gles::GlesPixelProgram>,
         options: Option<FocusGlowOptions>,
     ) {
-        *self.focus_glow_context.borrow_mut() = program
-            .cloned()
-            .zip(options)
-            .map(|(program, options)| (program, options));
+        *self.focus_glow_context.borrow_mut() = program.cloned().zip(options);
     }
 
     pub(crate) fn set_window_border_context(
@@ -503,10 +502,7 @@ impl RenderWindow {
         program: Option<&smithay::backend::renderer::gles::GlesPixelProgram>,
         options: Option<WindowBorderOptions>,
     ) {
-        *self.window_border_context.borrow_mut() = program
-            .cloned()
-            .zip(options)
-            .map(|(program, options)| (program, options));
+        *self.window_border_context.borrow_mut() = program.cloned().zip(options);
     }
 }
 
@@ -598,6 +594,7 @@ smithay::backend::renderer::element::render_elements! {
 impl AsRenderElements<GlesRenderer> for RenderWindow {
     type RenderElement = RenderWindowElement;
 
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
         renderer: &mut GlesRenderer,
@@ -894,7 +891,7 @@ impl MioState {
         match command.spawn() {
             Ok(child) => self.spawned_commands.push(child),
             Err(error) => {
-                warn!(%error, command = %program.to_string_lossy(), "failed to run command")
+                warn!(%error, command = %program.to_string_lossy(), "failed to run command");
             }
         }
     }
@@ -1200,11 +1197,11 @@ impl MioState {
                     duration: Duration::from_secs_f64(seconds),
                 });
         }
-        let preferred_focus = managed
-            .protocol_parent
-            .is_some()
-            .then_some(managed.return_focus_candidates)
-            .unwrap_or_default();
+        let preferred_focus = if managed.protocol_parent.is_some() {
+            managed.return_focus_candidates
+        } else {
+            Vec::new()
+        };
         let removed_was_focused = window_removal_changes_focus(managed.id, self.world.focused());
         self.space.unmap_elem(&managed.window);
         if let Err(error) = self.world.remove_window(managed.id) {
@@ -1237,11 +1234,11 @@ impl MioState {
             }
             return;
         }
-        let preferred_focus = self.managed_windows[index]
-            .protocol_parent
-            .is_some()
-            .then(|| self.managed_windows[index].return_focus_candidates.clone())
-            .unwrap_or_default();
+        let preferred_focus = if self.managed_windows[index].protocol_parent.is_some() {
+            self.managed_windows[index].return_focus_candidates.clone()
+        } else {
+            Vec::new()
+        };
         self.managed_windows[index].transition = WindowTransition::Closing;
         self.managed_windows[index]
             .transition_progress
@@ -1733,6 +1730,7 @@ impl MioState {
         }
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
     pub fn advance_animations(&mut self, now: Instant) -> bool {
         let seconds = now
             .saturating_duration_since(self.last_animation_frame)
@@ -1952,6 +1950,7 @@ impl MioState {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)] // Final normalized value is a shader f32.
 fn focus_indicator_reveal(elapsed: Duration, animation_speed: f64) -> f32 {
     if animation_speed <= 0.0 {
         return 1.0;
@@ -2145,6 +2144,7 @@ enum CameraFollowPolicy {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use std::time::Duration;
 

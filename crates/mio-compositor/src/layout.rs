@@ -40,13 +40,13 @@ pub fn world_to_screen<R: Into<WorldRect>>(
 
     Some(ScreenRect {
         x: scale(
-            rect.x() as f64 - camera.position().x,
+            rect.x() - camera.position().x,
             output_size.0,
             viewport.width(),
         )?
         .saturating_add(zoom_center_offset(output_size.0, camera.zoom())),
         y: scale(
-            rect.y() as f64 - camera.position().y,
+            rect.y() - camera.position().y,
             output_size.1,
             viewport.height(),
         )?

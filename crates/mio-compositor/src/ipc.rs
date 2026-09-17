@@ -129,6 +129,7 @@ impl MioState {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)] // Unit Grid deltas are exact in this practical range.
     fn ipc_move(&mut self, id: WindowId, direction: Direction) -> String {
         let Some(rect) = self.world.window(id).map(mio_core::Window::rect) else {
             return unknown_window_response(id);

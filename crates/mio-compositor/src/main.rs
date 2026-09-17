@@ -52,6 +52,7 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[allow(clippy::too_many_lines)]
 fn run() -> MainResult {
     init_logging()?;
 
@@ -127,7 +128,7 @@ fn run() -> MainResult {
     data.state.init_ipc(&mut event_loop)?;
     event_loop.handle().insert_source(
         Timer::from_duration(std::time::Duration::from_secs(1)),
-        |_, _, data| {
+        |_, &mut (), data| {
             data.state.poll_xwayland_satellite();
             data.state.poll_spawned_commands();
             data.state.poll_xdg_clients(std::time::Instant::now());
