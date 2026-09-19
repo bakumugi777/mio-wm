@@ -116,7 +116,8 @@ NixOS用の参考設定は`memo/nix/configuration.nix`の`xdg.portal`にあり�
 `config/mio.kdl`はMio起動時に`dbus-update-activation-environment`を実行し、portalなどの
 D-Bus/systemd起動サービスへMioのWayland socketとdesktop名を渡します。direct backendでは
 wlr portalとdesktop portalも順番に再接続しますが、nested backendではホスト側portalを
-再起動しません。その後OBSでは、
+再起動しません。NixOS等では、desktop session側で`graphical-session.target`も有効にする
+必要があります。その後OBSでは、
 niriで録画に使用できているものと同じ「スクリーンキャプチャ」を選択します。OBSの版や
 翻訳によってソース名が異なるため、別名のソースが存在することは前提にしません。この経路では
 Smithay標準の`ext-image-copy-capture-v1`が優先され、legacy `wlr-screencopy`はgrim等との
