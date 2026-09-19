@@ -21,7 +21,10 @@ use smithay::{
     },
 };
 
-use crate::state::{MioState, XdgClientPing};
+use crate::{
+    config::WindowRule,
+    state::{MioState, XdgClientPing},
+};
 
 const CLIENT_PING_INTERVAL: Duration = Duration::from_secs(30);
 const CLIENT_PING_TIMEOUT: Duration = Duration::from_secs(10);
@@ -261,6 +264,7 @@ impl MioState {
     pub(crate) fn unconstrain_popup(&self, popup: &PopupSurface) {
         let kind = PopupKind::Xdg(popup.clone());
         let Ok(root) = find_popup_root_surface(&kind) else {
+            tracing::debug!("xdg popup constraint skipped: root surface unavailable");
             return;
         };
         let popup_offset = get_popup_toplevel_coords(&kind);
@@ -268,9 +272,23 @@ impl MioState {
         let root_geometry = self.managed_windows.iter().find_map(|managed| {
             let toplevel = managed.window.toplevel()?;
             (toplevel.wl_surface() == &root).then(|| {
-                let output = self.space.outputs_for_element(&managed.window).pop()?;
-                let output_geometry = self.space.output_geometry(&output)?;
                 let window_geometry = self.space.element_geometry(&managed.window)?;
+                let output = self
+                    .space
+                    .outputs_for_element(&managed.window)
+                    .pop()
+                    .or_else(|| {
+                        self.space
+                            .outputs()
+                            .filter_map(|output| {
+                                let geometry = self.space.output_geometry(output)?;
+                                let overlap = rectangle_overlap_area(geometry, window_geometry);
+                                (overlap > 0).then(|| (overlap, output.clone()))
+                            })
+                            .max_by_key(|(overlap, _)| *overlap)
+                            .map(|(_, output)| output)
+                    })?;
+                let output_geometry = self.space.output_geometry(&output)?;
                 Some((output_geometry, window_geometry, managed.window.scale()))
             })?
         });
@@ -285,15 +303,11 @@ impl MioState {
                 Some((output_geometry, layer_geometry, Scale::from(1.0)))
             })
         });
-        let Some((mut target, root_geometry, scale)) = root_geometry else {
+        let Some((target, root_geometry, scale)) = root_geometry else {
+            tracing::debug!("xdg popup constraint skipped: root geometry unavailable");
             return;
         };
-        target.loc -= root_geometry.loc;
-        let mut target = target
-            .to_f64()
-            .upscale((1.0 / scale.x, 1.0 / scale.y))
-            .to_i32_round();
-        target.loc -= popup_offset;
+        let target = popup_constraint_target(target, root_geometry, scale, popup_offset);
         popup.with_pending_state(|state| {
             state.geometry = state.positioner.get_unconstrained_geometry(target);
         });
@@ -323,30 +337,11 @@ impl MioState {
         let Some((app_id, title)) = metadata else {
             return;
         };
-        let properties = self
-            .config
-            .config()
-            .window_rules
-            .iter()
-            .filter(|rule| {
-                rule.app_id
-                    .as_ref()
-                    .is_none_or(|expected| app_id.as_ref() == Some(expected))
-                    && rule
-                        .title
-                        .as_ref()
-                        .is_none_or(|expected| title.as_ref() == Some(expected))
-            })
-            .flat_map(|rule| {
-                [
-                    rule.opacity.map(WindowProperty::Opacity),
-                    rule.floating.map(WindowProperty::Floating),
-                    rule.blur.map(WindowProperty::Blur),
-                ]
-                .into_iter()
-                .flatten()
-            })
-            .collect::<Vec<_>>();
+        let properties = matching_window_rule_properties(
+            &self.config.config().window_rules,
+            app_id.as_deref(),
+            title.as_deref(),
+        );
         let Some(id) = self.window_id_for_surface(surface.wl_surface()) else {
             return;
         };
@@ -437,6 +432,30 @@ fn fixed_size_constraints(min: (i32, i32), max: (i32, i32)) -> bool {
     min.0 > 0 && min.1 > 0 && min == max
 }
 
+fn popup_constraint_target(
+    mut target: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    root_geometry: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    scale: Scale<f64>,
+    popup_offset: smithay::utils::Point<i32, smithay::utils::Logical>,
+) -> smithay::utils::Rectangle<i32, smithay::utils::Logical> {
+    target.loc -= root_geometry.loc;
+    let mut target = target
+        .to_f64()
+        .upscale((1.0 / scale.x, 1.0 / scale.y))
+        .to_i32_round();
+    target.loc -= popup_offset;
+    target
+}
+
+fn rectangle_overlap_area(
+    first: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+    second: smithay::utils::Rectangle<i32, smithay::utils::Logical>,
+) -> i64 {
+    first.intersection(second).map_or(0, |intersection| {
+        i64::from(intersection.size.w) * i64::from(intersection.size.h)
+    })
+}
+
 fn dialog_floating_action(id: mio_core::WindowId, should_float: bool) -> Action {
     if should_float {
         Action::SetWindowProperty {
@@ -510,16 +529,46 @@ pub fn handle_commit(state: &mut MioState, surface: &WlSurface) {
     }
 }
 
+fn matching_window_rule_properties(
+    rules: &[WindowRule],
+    app_id: Option<&str>,
+    title: Option<&str>,
+) -> Vec<WindowProperty> {
+    rules
+        .iter()
+        .filter(|rule| {
+            rule.app_id
+                .as_ref()
+                .is_none_or(|expected| app_id == Some(expected.as_str()))
+                && rule
+                    .title
+                    .as_ref()
+                    .is_none_or(|expected| title == Some(expected.as_str()))
+        })
+        .flat_map(|rule| {
+            [
+                rule.opacity.map(WindowProperty::Opacity),
+                rule.floating.map(WindowProperty::Floating),
+                rule.blur.map(WindowProperty::Blur),
+            ]
+            .into_iter()
+            .flatten()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
 
-    use mio_core::{Action, Presentation, WindowId, WindowProperty, WindowPropertyKind};
-
     use super::{
         accept_client_presentation_request, dialog_floating_action, dialog_should_float,
-        fixed_size_constraints, ping_due, PingDue,
+        fixed_size_constraints, matching_window_rule_properties, ping_due, rectangle_overlap_area,
+        PingDue,
     };
+    use crate::config::WindowRule;
+    use mio_core::{Action, Presentation, WindowId, WindowProperty, WindowPropertyKind};
+    use smithay::utils::{Logical, Rectangle};
 
     #[test]
     fn xdg_ping_schedule_distinguishes_send_wait_and_timeout() {
@@ -565,9 +614,52 @@ mod tests {
     }
 
     #[test]
+    fn popup_output_fallback_uses_actual_window_overlap() {
+        let output = Rectangle::<i32, Logical>::new((0, 0).into(), (1920, 1080).into());
+        let visible = Rectangle::<i32, Logical>::new((1800, 900).into(), (400, 300).into());
+        let outside = Rectangle::<i32, Logical>::new((2000, 1200).into(), (400, 300).into());
+        assert_eq!(rectangle_overlap_area(output, visible), 120 * 180);
+        assert_eq!(rectangle_overlap_area(output, outside), 0);
+    }
+
+    #[test]
     fn clients_may_request_fullscreen_but_not_maximize() {
         assert!(accept_client_presentation_request(Presentation::Fullscreen));
         assert!(!accept_client_presentation_request(Presentation::Maximized));
         assert!(!accept_client_presentation_request(Presentation::Normal));
+    }
+
+    #[test]
+    fn matching_window_rules_compose_in_file_order() {
+        let rules = [
+            WindowRule {
+                app_id: Some("foot".into()),
+                title: None,
+                opacity: Some(0.8),
+                floating: Some(true),
+                blur: None,
+            },
+            WindowRule {
+                app_id: Some("foot".into()),
+                title: Some("main".into()),
+                opacity: Some(0.6),
+                floating: None,
+                blur: Some(true),
+            },
+        ];
+
+        assert_eq!(
+            matching_window_rule_properties(&rules, Some("foot"), Some("main")),
+            [
+                WindowProperty::Opacity(0.8),
+                WindowProperty::Floating(true),
+                WindowProperty::Opacity(0.6),
+                WindowProperty::Blur(true),
+            ]
+        );
+        assert_eq!(
+            matching_window_rule_properties(&rules, Some("foot"), Some("other")),
+            [WindowProperty::Opacity(0.8), WindowProperty::Floating(true),]
+        );
     }
 }

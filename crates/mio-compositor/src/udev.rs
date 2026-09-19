@@ -315,10 +315,6 @@ pub fn init(
     event_loop: &mut EventLoop<CalloopData>,
     data: &mut CalloopData,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(global) = data.state.screencopy_global.take() {
-        data.display_handle
-            .remove_global::<crate::state::MioState>(global);
-    }
     let (mut session, session_notifier) = LibSeatSession::new()?;
     let seat_name = session.seat();
     let primary_path = primary_gpu(&seat_name)?.ok_or("no DRM GPU found for the active seat")?;
@@ -781,6 +777,38 @@ fn capture_window_snapshots(
     Ok(())
 }
 
+fn fulfill_direct_screencopies(
+    state: &mut crate::state::MioState,
+    renderer: &mut GlesRenderer,
+    elements: &[DirectRenderElement],
+    size: smithay::utils::Size<i32, Physical>,
+    background: [f32; 4],
+) -> Result<(), smithay::backend::renderer::gles::GlesError> {
+    let buffer_size = (size.w, size.h).into();
+    let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Argb8888, buffer_size)?;
+    let mut target = renderer.bind(&mut texture)?;
+    {
+        let mut frame = renderer.render(&mut target, size, Transform::Normal)?;
+        let damage = Rectangle::from_size(size);
+        frame.clear(background.into(), &[damage])?;
+        draw_render_elements(&mut frame, 1.0, elements, &[damage])?;
+        frame.finish().map(drop)?;
+    }
+    state.fulfill_screencopies(
+        renderer,
+        &target,
+        buffer_size,
+        state.presentation_clock.now().into(),
+    );
+    state.fulfill_image_copy_captures(
+        renderer,
+        &target,
+        buffer_size,
+        state.presentation_clock.now().into(),
+    );
+    Ok(())
+}
+
 fn closing_visual_elements(
     renderer: &GlesRenderer,
     visuals: &[ClosingVisual],
@@ -1157,6 +1185,7 @@ impl DirectBackend {
         };
         let mut elements: Vec<DirectRenderElement> = Vec::new();
         self.append_cursor_elements(state, now, &mut elements);
+        let cursor_element_count = elements.len();
         let layer_split_valid = upper_layer_element_count <= space_elements.len();
         let remaining_space_elements = if layer_split_valid {
             space_elements.split_off(upper_layer_element_count)
@@ -1212,6 +1241,19 @@ impl DirectBackend {
                 .into_iter()
                 .map(DirectRenderElement::from),
         );
+        if !state.pending_screencopies.is_empty() || state.has_pending_image_copy_captures() {
+            if let Some(mode) = output.current_mode() {
+                if let Err(error) = fulfill_direct_screencopies(
+                    state,
+                    &mut self.renderer,
+                    &elements[cursor_element_count..],
+                    mode.size,
+                    appearance.background_color,
+                ) {
+                    warn!(%error, "failed to render direct-backend screencopy");
+                }
+            }
+        }
         let cursor_plane_assignment = {
             let Some(scanout) = self.scanout.as_mut() else {
                 return;
@@ -1359,6 +1401,20 @@ impl DirectBackend {
                 }
             }
         }
+        if let Some(icon) = &state.dnd_icon {
+            let icon_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
+                render_elements_from_surface_tree(
+                    &mut self.renderer,
+                    &icon.surface,
+                    (pointer_location + icon.offset.to_f64())
+                        .to_physical(1.0)
+                        .to_i32_round(),
+                    1.0,
+                    1.0,
+                    Kind::Unspecified,
+                );
+            elements.extend(icon_elements.into_iter().map(DirectRenderElement::from));
+        }
     }
 
     fn render_session_lock(&mut self, state: &mut crate::state::MioState, render_started: Instant) {
@@ -1455,6 +1511,15 @@ impl DirectBackend {
         {
             send_frames_surface_tree(
                 surface,
+                output,
+                state.start_time.elapsed(),
+                refresh,
+                |_, _| Some(output.clone()),
+            );
+        }
+        if let Some(icon) = &state.dnd_icon {
+            send_frames_surface_tree(
+                &icon.surface,
                 output,
                 state.start_time.elapsed(),
                 refresh,

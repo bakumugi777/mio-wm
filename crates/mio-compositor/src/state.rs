@@ -17,7 +17,7 @@ use smithay::{
     backend::{
         allocator::dmabuf::Dmabuf,
         renderer::{
-            element::{utils::RescaleRenderElement, AsRenderElements, Id},
+            element::{utils::RescaleRenderElement, AsRenderElements, Element, Id},
             gles::GlesRenderer,
         },
     },
@@ -36,7 +36,7 @@ use smithay::{
         },
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            backend::{ClientData, ClientId, DisconnectReason, GlobalId},
+            backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
             Display, DisplayHandle,
         },
@@ -47,18 +47,23 @@ use smithay::{
     },
     wayland::{
         alpha_modifier::AlphaModifierState,
-        compositor::{CompositorClientState, CompositorState},
+        compositor::{
+            with_surface_tree_downward, CompositorClientState, CompositorState, TraversalAction,
+        },
         content_type::ContentTypeState,
         cursor_shape::CursorShapeManagerState,
         dmabuf::{DmabufGlobal, DmabufState, ImportNotifier},
         fractional_scale::FractionalScaleManagerState,
         idle_inhibit::IdleInhibitManagerState,
+        image_capture_source::{ImageCaptureSourceState, OutputCaptureSourceState},
+        image_copy_capture::{ImageCopyCaptureState, Session},
         input_method::InputMethodManagerState,
         keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor},
         output::OutputManagerState,
         pointer_constraints::PointerConstraintsState,
         presentation::PresentationState,
         relative_pointer::RelativePointerManagerState,
+        seat::WaylandFocus,
         selection::data_device::DataDeviceState,
         selection::{primary_selection::PrimarySelectionState, wlr_data_control::DataControlState},
         session_lock::{LockSurface, SessionLockManagerState, SessionLocker},
@@ -144,7 +149,10 @@ pub struct MioState {
     pub session_locked: bool,
     pub pending_session_lock: Option<SessionLocker>,
     pub session_lock_surfaces: Vec<(smithay::output::Output, LockSurface)>,
-    pub(crate) screencopy_global: Option<GlobalId>,
+    pub(crate) image_copy_capture_state: ImageCopyCaptureState,
+    pub(crate) _image_capture_source_state: ImageCaptureSourceState,
+    pub(crate) output_capture_source_state: OutputCaptureSourceState,
+    pub(crate) image_copy_capture_sessions: Vec<Session>,
     pub shm_state: ShmState,
     pub _single_pixel_buffer_state: SinglePixelBufferState,
     pub _output_manager_state: OutputManagerState,
@@ -185,10 +193,12 @@ pub struct MioState {
     pub(crate) cursor_wake: CursorWakeTrail,
     pub(crate) cursor_wake_override: Option<bool>,
     pub(crate) pending_screencopies: Vec<crate::screencopy::PendingScreencopy>,
+    pub(crate) pending_image_copy_captures: Vec<crate::image_copy_capture::PendingImageCopyCapture>,
     pub(crate) xwayland_satellite: Option<std::process::Child>,
     pub(crate) xwayland_display: Option<String>,
     pub(crate) spawned_commands: Vec<std::process::Child>,
     pub(crate) pending_startup_commands: Vec<Vec<std::ffi::OsString>>,
+    pub(crate) backend_name: &'static str,
     pub(crate) ipc_socket_path: Option<std::path::PathBuf>,
     pub(crate) presentation_clock: Clock<Monotonic>,
     pub(crate) presentation_sequence: u64,
@@ -209,6 +219,7 @@ pub(crate) struct DestroyedWindowTransition {
 pub(crate) struct PendingCameraDrag {
     pub(crate) button: u32,
     pub(crate) start: Point<f64, Logical>,
+    pub(crate) window: Option<WindowId>,
     pub(crate) start_camera_x: f64,
     pub(crate) start_camera_y: f64,
     pub(crate) start_zoom: f64,
@@ -625,6 +636,11 @@ impl AsRenderElements<GlesRenderer> for RenderWindow {
         let clip = window_geometry.to_physical_precise_round(scale);
         let presentation_scale = render_scale.x.min(render_scale.y);
         let radius = presented_corner_radius(corner_radius, scale.x, presentation_scale);
+        let popup_surface_ids = self
+            .window
+            .wl_surface()
+            .map(|root| popup_surface_tree_ids(&root))
+            .unwrap_or_default();
         let mut elements = self
             .window
             .render_elements::<<Window as AsRenderElements<GlesRenderer>>::RenderElement>(
@@ -636,10 +652,12 @@ impl AsRenderElements<GlesRenderer> for RenderWindow {
             .into_iter()
             .map(|element| RescaleRenderElement::from_element(element, location, render_scale))
             .map(|element| {
-                if let Some(program) = rounding_program
-                    .clone()
-                    .filter(|_| corner_radius > 0 || transition_progress < 1.0)
-                {
+                if let Some(program) = rounding_program.clone().filter(|_| {
+                    should_round_surface_element(
+                        popup_surface_ids.contains(element.id()),
+                        corner_radius > 0 || transition_progress < 1.0,
+                    )
+                }) {
                     RenderWindowElement::Rounded(RoundedElement::new(
                         element,
                         program,
@@ -722,6 +740,36 @@ impl AsRenderElements<GlesRenderer> for RenderWindow {
     }
 }
 
+fn popup_surface_tree_ids(root: &WlSurface) -> Vec<Id> {
+    let mut ids = Vec::new();
+    for (popup, _) in PopupManager::popups_for_surface(root) {
+        with_surface_tree_downward(
+            popup.wl_surface(),
+            (),
+            |_, _, &()| TraversalAction::DoChildren(()),
+            |surface, _, &()| {
+                ids.push(Id::from_wayland_resource(surface));
+            },
+            |_, _, &()| true,
+        );
+    }
+    ids
+}
+
+const fn should_round_surface_element(is_popup: bool, rounding_active: bool) -> bool {
+    rounding_active && !is_popup
+}
+
+fn scaled_surface_origin(
+    position: Point<f64, Logical>,
+    window_local: Point<f64, Logical>,
+    surface_offset: Point<i32, Logical>,
+    scale: Scale<f64>,
+) -> Point<f64, Logical> {
+    let surface_local = window_local - surface_offset.to_f64();
+    position - surface_local.upscale(scale)
+}
+
 impl MioState {
     #[allow(clippy::too_many_lines)]
     pub fn new(
@@ -761,7 +809,10 @@ impl MioState {
             VirtualKeyboardManagerState::new::<Self, _>(&display_handle, |_| true);
         let xdg_activation_state = XdgActivationState::new::<Self>(&display_handle);
         let session_lock_state = SessionLockManagerState::new::<Self, _>(&display_handle, |_| true);
-        let screencopy_global = crate::screencopy::create_global(&display_handle);
+        crate::screencopy::create_global(&display_handle);
+        let image_capture_source_state = ImageCaptureSourceState::new();
+        let output_capture_source_state = OutputCaptureSourceState::new::<Self>(&display_handle);
+        let image_copy_capture_state = ImageCopyCaptureState::new::<Self>(&display_handle);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&display_handle);
         let primary_selection_state = PrimarySelectionState::new::<Self>(&display_handle);
@@ -813,7 +864,10 @@ impl MioState {
             session_locked: false,
             pending_session_lock: None,
             session_lock_surfaces: Vec::new(),
-            screencopy_global: Some(screencopy_global),
+            image_copy_capture_state,
+            _image_capture_source_state: image_capture_source_state,
+            output_capture_source_state,
+            image_copy_capture_sessions: Vec::new(),
             shm_state: ShmState::new::<Self>(&display_handle, Vec::new()),
             _single_pixel_buffer_state: SinglePixelBufferState::new::<Self>(&display_handle),
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&display_handle),
@@ -851,10 +905,12 @@ impl MioState {
             cursor_wake: CursorWakeTrail::default(),
             cursor_wake_override: None,
             pending_screencopies: Vec::new(),
+            pending_image_copy_captures: Vec::new(),
             xwayland_satellite: None,
             xwayland_display: None,
             spawned_commands: Vec::new(),
             pending_startup_commands: Vec::new(),
+            backend_name: "winit",
             ipc_socket_path: None,
             presentation_clock,
             presentation_sequence: 0,
@@ -877,7 +933,10 @@ impl MioState {
         let mut command = std::process::Command::new(program);
         command
             .args(arguments)
-            .env("WAYLAND_DISPLAY", &self.socket_name);
+            .env("WAYLAND_DISPLAY", &self.socket_name)
+            .env("XDG_CURRENT_DESKTOP", "mio")
+            .env("XDG_SESSION_DESKTOP", "mio")
+            .env("MIO_BACKEND", self.backend_name);
         if let Some(path) = &self.ipc_socket_path {
             command.env("MIO_SOCKET", path);
         } else {
@@ -990,8 +1049,8 @@ impl MioState {
                             (position - location.to_f64()).upscale((1.0 / scale.x, 1.0 / scale.y));
                         window.surface_under(local, WindowSurfaceType::ALL).map(
                             |(surface, offset)| {
-                                let surface_local = local - offset.to_f64();
-                                (surface, position - surface_local)
+                                let origin = scaled_surface_origin(position, local, offset, scale);
+                                (surface, origin)
                             },
                         )
                     })
@@ -1469,10 +1528,11 @@ impl MioState {
                     output_size,
                 );
                 let screen = presentation_screen_rect(rect, camera, area, presentation)
-                    .map(|rect| apply_window_gaps(rect, presentation, gaps));
+                    .map(|rect| apply_window_gaps(rect, presentation, gaps, camera.zoom()));
                 let client_screen =
-                    presentation_screen_rect(rect, normal_camera, area, presentation)
-                        .map(|rect| apply_window_gaps(rect, presentation, gaps));
+                    presentation_screen_rect(rect, normal_camera, area, presentation).map(|rect| {
+                        apply_window_gaps(rect, presentation, gaps, normal_camera.zoom())
+                    });
                 Some((
                     managed.id,
                     managed.window.clone(),
@@ -1564,7 +1624,8 @@ impl MioState {
                 if let Some(screen) =
                     presentation_screen_rect(window.rect(), camera, area, window.presentation())
                 {
-                    let screen = apply_window_gaps(screen, window.presentation(), gaps);
+                    let screen =
+                        apply_window_gaps(screen, window.presentation(), gaps, camera.zoom());
                     targets.push((managed.id, output_id, screen));
                 }
             }
@@ -1989,9 +2050,16 @@ fn presentation_screen_rect(
     }
 }
 
-fn apply_window_gaps(rect: ScreenRect, presentation: Presentation, gaps: u32) -> ScreenRect {
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn apply_window_gaps(
+    rect: ScreenRect,
+    presentation: Presentation,
+    gaps: u32,
+    camera_zoom: f64,
+) -> ScreenRect {
     if presentation == Presentation::Normal {
-        inset_screen_rect(rect, gaps)
+        let scaled = (f64::from(gaps) * camera_zoom).round().max(0.0) as u32;
+        inset_screen_rect(rect, scaled)
     } else {
         rect
     }
@@ -2152,13 +2220,37 @@ mod tests {
         apply_window_gaps, camera_should_follow_on_activation, floating_z_index,
         focus_indicator_reveal, merge_focus_candidates, presentation_screen_rect,
         presented_corner_radius, record_initial_client_size, render_scale_for_committed_size,
-        restore_preferred_focus, split_output_area, undistorted_resize_scale,
-        window_removal_changes_focus, window_transition_speed, CameraFollowPolicy, ScreenRect,
+        restore_preferred_focus, scaled_surface_origin, should_round_surface_element,
+        split_output_area, undistorted_resize_scale, window_removal_changes_focus,
+        window_transition_speed, CameraFollowPolicy, ScreenRect,
     };
+
+    #[test]
+    fn rounded_window_clip_does_not_apply_to_popup_surfaces() {
+        assert!(should_round_surface_element(false, true));
+        assert!(!should_round_surface_element(true, true));
+        assert!(!should_round_surface_element(false, false));
+    }
+
+    #[test]
+    fn pointer_surface_origin_applies_the_window_presentation_scale() {
+        let position = Point::<f64, Logical>::from((500.0, 300.0));
+        let window_local = Point::<f64, Logical>::from((200.0, 100.0));
+        let popup_offset = Point::<i32, Logical>::from((160, 80));
+        assert_eq!(
+            scaled_surface_origin(
+                position,
+                window_local,
+                popup_offset,
+                Scale::from((0.5, 0.5)),
+            ),
+            Point::from((480.0, 290.0))
+        );
+    }
     use mio_core::{
         Camera, GridPoint, GridRect, GridSize, OutputId, Presentation, WindowId, World,
     };
-    use smithay::utils::{Rectangle, Scale};
+    use smithay::utils::{Logical, Point, Rectangle, Scale};
 
     #[test]
     fn floating_windows_stack_above_tiled_windows() {
@@ -2205,6 +2297,42 @@ mod tests {
         let fixed = render_scale_for_committed_size((800, 450), (640, 480), (1600, 900), true, 0.5);
         assert!((fixed.x - 0.5).abs() < f64::EPSILON);
         assert!((fixed.y - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn zoom_scaled_gaps_keep_surface_tree_presentation_scale_uniform() {
+        let normal = apply_window_gaps(
+            ScreenRect {
+                x: 0,
+                y: 0,
+                width: 800,
+                height: 600,
+            },
+            Presentation::Normal,
+            20,
+            1.0,
+        );
+        let distant = apply_window_gaps(
+            ScreenRect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+            },
+            Presentation::Normal,
+            20,
+            0.5,
+        );
+        let scale = render_scale_for_committed_size(
+            (distant.width, distant.height),
+            (normal.width, normal.height),
+            (normal.width, normal.height),
+            false,
+            0.5,
+        );
+
+        assert!((scale.x - 0.5).abs() < f64::EPSILON);
+        assert!((scale.y - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -2315,7 +2443,7 @@ mod tests {
             height: 600,
         };
         assert_eq!(
-            apply_window_gaps(rect, Presentation::Normal, 8),
+            apply_window_gaps(rect, Presentation::Normal, 8, 1.0),
             ScreenRect {
                 x: 8,
                 y: 8,
@@ -2323,8 +2451,34 @@ mod tests {
                 height: 584,
             }
         );
-        assert_eq!(apply_window_gaps(rect, Presentation::Maximized, 8), rect);
-        assert_eq!(apply_window_gaps(rect, Presentation::Fullscreen, 8), rect);
+        assert_eq!(
+            apply_window_gaps(rect, Presentation::Maximized, 8, 1.0),
+            rect
+        );
+        assert_eq!(
+            apply_window_gaps(rect, Presentation::Fullscreen, 8, 1.0),
+            rect
+        );
+    }
+
+    #[test]
+    fn gaps_follow_camera_zoom_to_preserve_window_proportions() {
+        let rect = ScreenRect {
+            x: 100,
+            y: 50,
+            width: 200,
+            height: 120,
+        };
+
+        assert_eq!(
+            apply_window_gaps(rect, Presentation::Normal, 20, 0.5),
+            ScreenRect {
+                x: 110,
+                y: 60,
+                width: 180,
+                height: 100,
+            }
+        );
     }
 
     #[test]

@@ -545,16 +545,24 @@ screen_y = (world_y - camera_y) * zoom
 
 重要なのは、World座標とrender座標を分離すること。
 
-## Nested screencopy
+## Screen capture
 
-初期の`zwlr_screencopy_manager_v1`はnested winit/GLES backendに限定し、最終描画後かつ
-submit前のframebufferをSHMへreadbackする。Output全体とOutput-local regionを扱い、regionは
+Smithayの`ImageCopyCaptureState`、`ImageCaptureSourceState`、
+`OutputCaptureSourceState`を使用して`ext-image-copy-capture-v1`を第一のcapture経路とする。
+最終描画後かつsubmit前のframebufferをSHMへreadbackし、Smithayの`Frame::success`で
+完了とpresentation timeを通知する。`xdg-desktop-portal-wlr`はこの標準経路をlegacy
+`wlr-screencopy`より優先して使用する。
+
+`zwlr_screencopy_manager_v1`はgrim等との互換用として残す。Output全体と
+Output-local regionを扱い、regionは
 Output boundsへclipする。clientが渡すbufferは広告したARGB8888、寸法、strideと一致する
 場合のみ使用する。`copy_with_damage`は初期段階では全capture領域をdamageとして返す。
 
-cursorは現在Mio自身が描画していないため、`overlay_cursor`による追加合成も行わない。
-このlegacy protocol globalはnested開発環境では全clientに見える。本番backendでは
-無認証の画面取得を許可せず、portal等の信頼済み経路へ制限する。
+capture用sceneはpointer overlayを含めず、`overlay_cursor`による追加合成も行わない。
+直接backendでは最終sceneを一時GLES targetへ描画し、既存のSHM readback経路へ渡す。
+通常のDRM scanoutは変更しない。sandbox化されたapplicationはportalの画面選択を経由する。
+通常Wayland socketへ直接接続できる非sandbox clientは同じdesktop sessionの信頼領域として
+標準・legacy両globalを利用できる。session lock中はcapture要求を拒否する。
 
 ---
 
@@ -624,6 +632,8 @@ select window
 
 というprimitiveの合成として実装する。
 
+公開操作と配置への影響は`docs/overview.md`を正とする。
+
 ---
 
 # 16. Focus
@@ -642,6 +652,10 @@ down
 を持つ。
 
 候補WindowをWorld上の位置関係から選択する。
+
+focusが空の場合、最初のDirectional focusはCamera中心に最も近いWindowを選び、次回以降の
+方向選択に使う基準を復旧する。この選択でCamera位置は暗黙に変更せず、通常のFocusと
+CameraFollowの合成側が必要な追従だけを行う。
 
 アルゴリズムの詳細は後で調整可能にする。
 
@@ -680,6 +694,10 @@ ClearWindowProperty(...)
 ```
 
 KeybindやIPCから直接内部状態を書き換えず、原則Actionを経由する。
+
+絶対倍率のkeybindは`bind "Super+5" "camera-zoom" 0.5`のように宣言する。
+設定値はMouse zoomと同じ`0.1..=1.0`とし、初期設定では`Super+1`〜`Super+9`を
+`0.1`〜`0.9`、`Super+0`を最大倍率`1.0`へ割り当てる。
 
 将来的にYaldraからも同じAction / primitiveを使用する。
 
@@ -806,7 +824,10 @@ releaseされるまで後続eventを消費し、client、Focus、Cameraへ副作
 静止したLMB single clickは対象へfocusし、`CameraCenter`でsizeを維持したままCamera中央へ戻す。
 
 Window上で`reset-window` buttonを設定された回数clickすると、共有`ResizeWindow` Actionで対象を
-`placement.initial-size`へ戻し、`FocusWindow`と`CameraFollow`を合成してCamera内へ収める。
+初期幅とその半幅の間で切り替える。現在幅が初期幅なら半幅、半幅未満なら半幅、それ以外なら
+初期幅とする。奇数の初期幅は半幅を切り上げ、高さは`placement.initial-size`へ戻す。
+`toggle-window-size` keybindも同じActionへ変換し、`FocusWindow`と`CameraFollow`を合成して
+Camera内へ収める。
 同じbutton、同じWindow、6 logical pixels以内で275ms以内の2 clickだけをdouble clickとする。
 最初の単clickは判定期限まで保留し、成立しなければ元のtimestampを持つpress/releaseとして
 clientへ再送する。pointerが判定範囲外へ動いた場合は期限を待たず再送する。
@@ -828,7 +849,10 @@ Mioの「水」のテーマは主に動きで表現する。
 などで流体感を出す。
 
 Focusの静止時の目印はWindow下辺全体のごく薄い水膜と、中央から左右へ減衰する
-細い水光の組み合わせとする。
+細い水光の組み合わせとする。水光の細い芯の周囲には、Window内容の視認性を損なわない
+低輝度の広いhaloを持たせ、特にWindow下端から下方向へ淡く減衰させる。単なる境界線ではなく
+下側へ光を落とす発光として読めるようにする。haloは細い芯より横方向にも広く拡散させ、
+最大Camera倍率でも短い白線だけに見えない範囲を確保する。
 これはMio全体のVisual effectとは別の設計判断であり、blur、shadow、ripple、transition
 などの表現を禁止または軽視するものではない。
 
@@ -955,11 +979,11 @@ Window開閉transitionは`window-transition`で`water`、`sci-fi`、`none`を
 選択する。どの方式も同じOpening / Stable / Closingと進捗値を共有し、renderer shader
 だけを切り替える。`window-transition-duration`で基準時間をミリ秒指定する。globalな
 `animation.speed`は他のanimationと同様にこの基準時間へ倍率として作用する。
-`water`は全面を滑らかにfadeし、像を横切る一つの細い波面付近だけへ微細な屈折と
-弱い明暗のcrestを重ねる。Closingでは波面が読める間は像を保ち、通過後の終端で
-透明へ素早く抜ける。Openingは直線的な波面を表示せず、面全体のごく弱い屈折が
-収束しながら像を定着させる。両者は同じ進捗を共有し、描画方向だけをuniformで区別する。
-領域をnoiseで細かく欠落させたり、大きな放射状変形を行ったりしない。
+`water`はWindow像の全面を一つの水面として扱い、時間全域で全領域を同時にfadeさせながら
+低周波の屈折、にじみ、緩やかな濃淡差によって像全体を液状化し、水へ溶けるように透明化する。
+均一fadeだけに見えない強さを持たせるが、上下左右へ走査する境界、部分的な出現順、
+細かな粒状欠落、発光するcrestは使用しない。OpeningとClosingを別演出へ分岐せず、同じ進捗の
+厳密な逆再生として凝結と溶解を表現する。大きな放射状変形は行わない。
 clientが自発的にtoplevelを破棄した場合は、最後に正常描画できたWindow単位のGPU
 snapshotをrenderer adapterがClosingVisualとして短時間保持する。WindowはCore Worldから
 即座に除去し、snapshotの寿命やtransition進捗をCore stateへ追加しない。snapshotは
@@ -1056,6 +1080,8 @@ gaps
 `gaps` は通常Windowに割り当てられた表示矩形の四辺を、指定したlogical pixel数だけ
 内側へ縮める。隣接する2つのWindow間にはその2倍の空間が生じる。これはadapter側の
 表示とclient configureにだけ作用し、World geometry、Grid制約、隣接判定を変更しない。
+Camera zoom時の表示gapはzoomと同じ比率で縮尺し、遠景でもWindowとgapの比率、および
+World上の占有範囲に対する見た目の対応を維持する。clientの通常configure sizeは変更しない。
 最大化およびfullscreenのWindowには適用せず、0で無効化する。
 Fullscreenでは角丸を0として描画する。Fullscreen中はKeyboard、Mouse、IPCに共通する
 Camera移動およびzoom ActionをCoreが拒否し、解除時までCamera状態を保持する。
@@ -1194,6 +1220,11 @@ animation
 
 正規表現またはglob matchingは将来対応候補。
 
+現在の`app-id`と`title`は完全一致であり、両方を指定したRuleはAND条件とする。複数Ruleが
+一致した場合はconfig記述順にPropertyを合成し、同じPropertyだけを後のRuleで上書きする。
+metadata変更またはconfig再読み込み時はConfig Rule層を再計算するが、Window単位のRuntime
+Override層は保持する。公開上の詳細は`docs/window-properties.md`を正とする。
+
 ---
 
 # 30. ConfigとRuntimeを分離
@@ -1303,9 +1334,9 @@ Shirube / Kanameを必須依存にしない。
 
 # 34. IPC
 
-External shellやCLIからMioへアクセスできるIPCを設ける予定。
+External shellやCLIからMioへアクセスできるIPCを提供する。
 
-最低限公開候補：
+公開するsnapshot情報：
 
 ```text
 windows
@@ -1319,7 +1350,7 @@ camera zoom
 outputs
 ```
 
-Command候補：
+Action command：
 
 ```text
 focus window
@@ -1383,6 +1414,7 @@ unmaximize requestは、applicationが以前のsession状態を復元してMio�
 引数なし、`--help`、`-h`、`help`ではMioへの接続を要求せず、利用可能なread / Action
 command、方向、Property値の形式を表示する。
 `--version`と`-V`もMioへの接続なしでCLI versionを表示する。
+transport errorまたは`{"ok":false}`応答では非ゼロ終了し、成功応答だけを標準出力へ出す。
 Window / Camera / PropertyのAction commandは必ず`World::apply(Action)`を経由し、成功後に
 adapter layoutを同期する。compositor lifecycleの`quit`はこの対象外とする。
 初期serverは短命なlocal CLI接続を対象とする。subscription、非同期event stream、認証、
@@ -1573,7 +1605,7 @@ Output間で移籍させない。
 Window内で横方向に分割表示する。各Window surface treeはCameraごとの派生Render
 Elementとして生成し、仮想Output領域でcropする。Core Windowとclient surfaceは
 複製しない。実際の複数 wl_output 公開は後続のadapter実装で行う。
-仮想Cameraは共有Action cycle-output（既定 Ctrl+Alt+N）で巡回できる。
+仮想Cameraは共有Action cycle-output（既定 Super+N）で巡回できる。
 
 ---
 

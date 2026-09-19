@@ -908,7 +908,8 @@ cursor-associated disturbanceはPointerを舟に見立てる短い航跡とす�
 色付きの光や線は重ねない。航跡はoutput座標だけを持つrenderer-only stateとし、Worldへ
 追加しない。
 
-Windowの開閉transitionはwaterまたはSF表現を選択できる。waterは歪んだ像の凝結・溶解、
+Windowの開閉transitionはwaterまたはSF表現を選択できる。waterはWindow全面を一つの水面として
+同時にfade・屈折させ、走査境界を使わず歪んだ像の凝結・溶解を表す。OpeningはClosingを逆再生する。
 SFは白い中心線の伸長と上下展開を同じ進捗の順逆で表す。論理Window geometryを補間せず、
 閉じるWindowはCore Worldから
 先に除去してadapter側の描画寿命だけを短時間保持する。clientが自発的にsurfaceを破棄した
@@ -1066,6 +1067,15 @@ Architecture overview
 - 高度なpseudo-3D effect
 
 これらのために1.0を遅らせない。
+
+## 2026-09-19監査状況
+
+Phase 18で要求した公開文書と、KDL、Action、Property、IPC、Camera、Window Rule、config path、
+CLIの仕様整理は完了した。公開面は1.0向け固定候補とする。
+
+ただし、`docs/requirements.md`の1.0候補要件にある物理Multi-monitorとIMEの安定性、および
+Phase 17の一定期間のメインWM利用は未完了である。Phase 18文書整備完了を1.0 readyとは扱わない。
+詳細な根拠と完了条件は`docs/release-readiness.md`を参照する。
 
 ---
 

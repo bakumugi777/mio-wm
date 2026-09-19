@@ -29,6 +29,10 @@ pub enum Action {
         id: WindowId,
         rect: WorldRect,
     },
+    ToggleWindowSize {
+        id: WindowId,
+        initial_size: GridSize,
+    },
     SetNextPlacement(Direction),
     ActivateOutput(OutputId),
     CycleOutput,

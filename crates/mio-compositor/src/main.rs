@@ -19,6 +19,7 @@ mod animation;
 mod config;
 mod effects;
 mod handlers;
+mod image_copy_capture;
 mod input;
 mod ipc;
 mod layout;
@@ -100,6 +101,7 @@ fn run() -> MainResult {
         state,
         display_handle,
     };
+    data.state.backend_name = options.backend.name();
 
     let viewport = data.state.config.config().viewport;
     for index in 1..options.virtual_outputs {
@@ -176,9 +178,14 @@ fn startup_command(
     wayland_display: &OsStr,
     ipc_socket: Option<&std::path::Path>,
     xwayland_display: Option<&str>,
+    backend_name: &str,
 ) -> Command {
     let mut command = Command::new(program);
-    command.env("WAYLAND_DISPLAY", wayland_display);
+    command
+        .env("WAYLAND_DISPLAY", wayland_display)
+        .env("XDG_CURRENT_DESKTOP", "mio")
+        .env("XDG_SESSION_DESKTOP", "mio")
+        .env("MIO_BACKEND", backend_name);
     if let Some(path) = ipc_socket {
         command.env("MIO_SOCKET", path);
     } else {
@@ -196,6 +203,7 @@ fn startup_command(
 }
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)]
 struct Options {
     backend: BackendKind,
     command: Option<std::ffi::OsString>,
@@ -212,6 +220,15 @@ enum BackendKind {
     #[default]
     Winit,
     Udev,
+}
+
+impl BackendKind {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Winit => "winit",
+            Self::Udev => "udev",
+        }
+    }
 }
 
 enum ParsedOptions {
@@ -333,6 +350,7 @@ mod tests {
             OsStr::new("wayland-7"),
             Some(std::path::Path::new("/run/user/1000/mio.sock")),
             None,
+            "udev",
         );
         let (_, wayland_display) = native
             .get_envs()
@@ -349,12 +367,28 @@ mod tests {
             .find(|(name, _)| *name == OsStr::new("DISPLAY"))
             .expect("DISPLAY has an explicit removal");
         assert_eq!(native_display, None);
+        let (_, current_desktop) = native
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("XDG_CURRENT_DESKTOP"))
+            .expect("XDG_CURRENT_DESKTOP has an explicit value");
+        assert_eq!(current_desktop, Some(OsStr::new("mio")));
+        let (_, session_desktop) = native
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("XDG_SESSION_DESKTOP"))
+            .expect("XDG_SESSION_DESKTOP has an explicit value");
+        assert_eq!(session_desktop, Some(OsStr::new("mio")));
+        let (_, backend) = native
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("MIO_BACKEND"))
+            .expect("MIO_BACKEND has an explicit value");
+        assert_eq!(backend, Some(OsStr::new("udev")));
 
         let compatibility = startup_command(
             OsStr::new("client"),
             OsStr::new("wayland-7"),
             None,
             Some(":100"),
+            "winit",
         );
         let (_, compatibility_display) = compatibility
             .get_envs()

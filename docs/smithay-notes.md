@@ -131,6 +131,12 @@ renderer pairs that notification with its cached texture and renders a short-liv
 ClosingVisual through the same transition shader. These GLES objects and their animation
 clock remain outside Mio Core.
 
+The water transition uses one progress-only dissolve for both live Window elements and
+ClosingVisual snapshots. The entire Window fades simultaneously as one water surface;
+low-frequency refraction only softens that full-surface fade and never forms a directional
+waterline. Opening is therefore the exact reverse of Closing rather than a direction-specific
+shader branch.
+
 The cursor wake is a framebuffer-effect render element placed at the protocol layer
 boundary: below Top/Overlay layer-shell surfaces and above ordinary Windows and lower
 layers. Launchers, bars, and notifications are therefore composed once and are never
@@ -229,6 +235,26 @@ logic or persist a layout group.
   dead elements.
 - A toplevel needs its initial xdg configure after its first surface commit. Popup
   configure and cleanup are managed through `PopupManager`.
+- Smithay's `Window::render_elements` includes tracked popup surface trees before the
+  toplevel tree. Mio's rounded-corner shader must therefore exclude every surface in
+  those popup trees; applying the toplevel clip rectangle to all returned elements
+  cuts menus off at the resized parent Window boundary. Popup placement and clipping
+  remain protocol/render concerns and do not add Window state to Core.
+- `Window::surface_under` returns its surface offset in the unscaled Window-local
+  coordinate space. When Mio presents a Window through `RescaleRenderElement`, the
+  offset from the pointer to that surface must be multiplied by the same presentation
+  scale before deriving the global pointer-focus origin. Mixing unscaled local deltas
+  with screen coordinates makes visible popup regions receive out-of-bounds local
+  coordinates after an interactive resize.
+- A normal Window's visual gap must be scaled by the Camera zoom before deriving its
+  presented rectangle, while its normal client configure keeps the unzoomed gap. This
+  keeps the `RenderWindow` scale equal to the Camera scale, so Smithay's tracked popup
+  and subsurface trees inherit the same transform as the toplevel. Scaling popup
+  geometry separately would apply the Camera transform twice and break input origins.
+- `Window::with_surfaces` and Mio's Window-ID lookup include tracked popup trees.
+  Pointer Window-management gestures must still distinguish those popup surfaces:
+  in particular, a primary click on a popup near its parent's edge must be forwarded
+  to the client rather than starting the configured parent-Window resize action.
 - On NixOS, winit's runtime loading requires the Wayland, xkbcommon, and EGL/OpenGL
   library paths configured by the repository's `shell.nix`.
 
@@ -325,6 +351,13 @@ For xdg popups, the pinned smallvil/anvil implementations use
 and layer-shell roots. Because Overview scales completed surface trees, the available
 Output rectangle is converted back through the root's render scale before updating
 the popup's client-coordinate geometry.
+
+`Space::outputs_for_element` can still be empty when `new_popup` arrives even though
+the animated root Window is mapped and visibly intersects an Output. Popup
+unconstraining therefore first uses Smithay's recorded association and falls back to
+the Output with the largest intersection against the root's current Space geometry.
+The fallback derives ownership from existing presentation geometry; it does not add a
+second Window-to-Output state.
 
 Tracking a popup does not implement `xdg_popup.grab`. Mio also follows anvil's Seat
 grab path: validate that the root is a managed toplevel or layer surface, reject a
@@ -490,6 +523,11 @@ the current cursor surface's hotspot belongs only to that cursor and must not of
 independent drag icon. Drop, dead-surface cleanup, and session lock all clear the
 adapter-owned reference.
 
+Both nested and direct backends must include that surface tree in their final pointer
+overlay and send it frame callbacks. Surface commits may carry `buffer_delta`; Mio
+accumulates that value into the adapter-owned icon offset just as anvil does, without
+turning the drag icon into Window or World state.
+
 `LayerMap::non_exclusive_zone` returns the Output-local area left after layer-shell
 exclusive zones are arranged. Mio uses that rectangle only for the adapter's
 World-to-screen transform. Fullscreen bypasses it in favor of complete Output geometry;
@@ -566,10 +604,17 @@ allowed while the special input-method keyboard grab is active, matching anvil.
 
 ## Phase 10 screencopy findings
 
-The pinned Smithay revision has no wlr-screencopy server state or anvil example, even
-though its re-exported `wayland-protocols-wlr` contains the protocol bindings. Mio's
-initial implementation therefore owns the protocol dispatch in its adapter instead of
-adding anything to Smithay or Mio Core.
+The pinned Smithay revision has no legacy wlr-screencopy server state or anvil example,
+even though its re-exported `wayland-protocols-wlr` contains the protocol bindings.
+Mio's initial legacy implementation therefore owns that protocol dispatch in its
+adapter instead of adding anything to Smithay or Mio Core.
+
+The same revision provides Smithay's standard `ext-image-copy-capture-v1` server state,
+based on COSMIC Comp, together with output capture sources and protocol delegates. Mio
+uses those types as its primary portal screencast path and supplies only the
+compositor-specific constraints, session lifetime, final-scene SHM readback, and
+presentation timestamp. xdg-desktop-portal-wlr 0.8.4 selects this standard path when
+both manager globals are present and falls back to legacy wlr-screencopy otherwise.
 
 For the nested GLES backend, capture requests are queued during Wayland dispatch and
 fulfilled after `render_output` and before backend submission. `ExportMem` reads the
@@ -582,15 +627,35 @@ The nested capture therefore exports its observed final row order with no `y_inv
 flag. The first implementation reports full region damage and has no separately
 rendered cursor to composite.
 
+The screencopy `ready` event uses the absolute `CLOCK_MONOTONIC` timestamp from Mio's
+Smithay `Clock<Monotonic>`. A duration measured from compositor startup is valid for
+surface frame callbacks but not for this protocol event. Passing that relative value
+lets one-shot screenshot clients succeed while PipeWire consumers treat subsequent
+frames as stale and can leave a screencast frozen on its first image.
+
+After a requested frame is copied or fails, the compositor must also send
+`wl_buffer.release` for the supplied SHM buffer. The screencopy `ready` event only
+completes the frame object; it does not release that buffer. Portal screencasts use a
+small PipeWire buffer pool, so omitting `release` exhausts the initial buffers and
+freezes the stream even though one-shot screenshot clients still work.
+
 `GlesRenderer::map_texture` makes the EGL context current without the winit window
 surface. `WinitGraphicsBackend::bind` only constructs a GLES target and does not make
 the EGL surface current by itself. After a readback Mio therefore binds the target and
 starts/finishes an empty render frame before `submit`; otherwise the following swap
 fails with `EGL_BAD_SURFACE` and context loss.
 
-The screencopy global is intentionally an unrestricted nested-development facility.
-A production backend must put capture behind a trusted security context or portal;
-unrestricted screen capture is not an acceptable system-compositor policy.
+Both backends advertise the standard and legacy capture globals. Sandboxed
+applications use xdg-desktop-portal-wlr's selection flow; an unsandboxed process that
+can connect directly to Mio's ordinary Wayland socket is treated as part of the same
+desktop-session trust boundary and can access the protocols directly. This is not
+per-client authorization, so deployments must protect access to the session socket.
+Locked sessions reject capture requests.
+
+When a direct-backend request is pending, Mio renders the already assembled scene,
+excluding the pointer overlay, into a temporary GLES texture and feeds that
+framebuffer to the shared SHM readback implementation. The normal DRM scanout remains
+unchanged.
 
 ## Phase 10 linux-dmabuf findings
 
@@ -792,11 +857,8 @@ the paced repaint loop armed. `Kind::Cursor`, the GBM device supplied to
 element to a DRM cursor plane. If the device has no cursor plane or the element exceeds
 its size, Smithay composites that same element into the primary plane instead. Mio logs
 assignment transitions at debug level. A built-in pointer is used when the default
-theme image is unavailable. Multiple connectors/GPUs and
-trusted screen capture and framebuffer-wide effects such as the cursor wake remain
-later direct-backend slices. The unrestricted legacy wlr-screencopy global is removed
-before the direct backend starts serving clients; it remains a nested-development-only
-facility until a portal or equivalent trust boundary exists.
+theme image is unavailable. Multiple connectors/GPUs remain a later direct-backend
+slice.
 Window-local effects use the shared `RenderWindow` elements. Closing transitions keep
 the last per-Window offscreen snapshot in the direct adapter and place its transition
 element above the live Space until the configured duration expires; this preserves the

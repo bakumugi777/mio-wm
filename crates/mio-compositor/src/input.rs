@@ -540,6 +540,11 @@ impl MioState {
                     self.sync_layout(false);
                 }
             }
+            ConfigAction::CameraZoom(zoom) => {
+                if self.world.apply(Action::CameraZoom(zoom)).is_ok() {
+                    self.sync_layout(false);
+                }
+            }
             ConfigAction::CycleOutput => {
                 if self.world.apply(Action::CycleOutput).is_ok() {
                     self.sync_layout(false);
@@ -566,6 +571,11 @@ impl MioState {
             }
             ConfigAction::ToggleFullscreen => self.toggle_focused_presentation(true),
             ConfigAction::ToggleMaximized => self.toggle_focused_presentation(false),
+            ConfigAction::ToggleWindowSize => {
+                if let Some(id) = focused {
+                    self.toggle_window_size(id);
+                }
+            }
             ConfigAction::ToggleOpacity => self.toggle_focused_opacity(),
             ConfigAction::ToggleBlur => self.toggle_focused_blur(),
             ConfigAction::ToggleCursorWake => self.toggle_cursor_wake(),
@@ -929,9 +939,11 @@ impl MioState {
         } else {
             match self.process_camera_drag_button(event, pointer.current_location()) {
                 CameraButtonResult::Consumed => return,
-                CameraButtonResult::ReplayClick { button, press_time } => {
-                    Some((button, press_time))
-                }
+                CameraButtonResult::ReplayClick {
+                    button,
+                    press_time,
+                    window,
+                } => Some((button, press_time, window)),
                 CameraButtonResult::Forward => None,
             }
         };
@@ -946,10 +958,15 @@ impl MioState {
             || replay_camera_press.is_some())
             && !pointer.is_grabbed()
             && (!keyboard.is_grabbed() || input_method.keyboard_grabbed());
-        let target_window = may_change_focus
+        let release_window = may_change_focus
             .then(|| self.surface_under(pointer.current_location()))
             .flatten()
             .and_then(|(surface, _)| self.window_id_for_surface(&surface));
+        let target_window = pointer_click_target(
+            replay_camera_press.is_some(),
+            replay_camera_press.and_then(|(_, _, window)| window),
+            release_window,
+        );
         let consume_as_focus_click = should_consume_focus_click(
             event.button_code(),
             event.state(),
@@ -984,7 +1001,7 @@ impl MioState {
             return;
         }
 
-        if let Some((button, press_time)) = replay_camera_press {
+        if let Some((button, press_time, _)) = replay_camera_press {
             self.defer_or_complete_reset_click(
                 button,
                 press_time,
@@ -1149,7 +1166,7 @@ impl MioState {
             if clicks >= self.config.config().mouse.reset_window_clicks {
                 self.pending_pointer_click = None;
                 if let Some(id) = window {
-                    self.reset_window_to_initial_size(id);
+                    self.toggle_window_size(id);
                 }
             } else if let Some(pending) = &mut self.pending_pointer_click {
                 pending.clicks = clicks;
@@ -1162,7 +1179,7 @@ impl MioState {
         self.replay_pending_pointer_click();
         if self.config.config().mouse.reset_window_clicks == 1 {
             if let Some(id) = window {
-                self.reset_window_to_initial_size(id);
+                self.toggle_window_size(id);
             }
             return;
         }
@@ -1250,22 +1267,25 @@ impl MioState {
         pointer.frame(self);
     }
 
-    fn reset_window_to_initial_size(&mut self, id: mio_core::WindowId) {
-        let size = self.config.config().initial_window_size;
-        match self.world.apply(Action::ResizeWindow { id, size }) {
+    fn toggle_window_size(&mut self, id: mio_core::WindowId) {
+        let initial_size = self.config.config().initial_window_size;
+        match self
+            .world
+            .apply(Action::ToggleWindowSize { id, initial_size })
+        {
             Ok(_) => {
                 self.activate_window_without_camera(id, SERIAL_COUNTER.next_serial());
                 if let Err(error) = self.world.apply(Action::CameraFollow(id)) {
-                    debug!(%error, "failed to reveal reset Window with Camera");
+                    debug!(%error, "failed to reveal resized Window with Camera");
                 }
                 self.sync_layout(true);
                 info!(
                     window = id.get(),
-                    ?size,
-                    "reset Window to configured initial size"
+                    ?initial_size,
+                    "toggled Window between half and initial width"
                 );
             }
-            Err(error) => debug!(%error, "pointer Window reset rejected"),
+            Err(error) => debug!(%error, "Window size toggle rejected"),
         }
     }
 
@@ -1413,6 +1433,9 @@ impl MioState {
         position: smithay::utils::Point<f64, smithay::utils::Logical>,
     ) -> Option<(mio_core::WindowId, ResizeEdges)> {
         let (surface, _) = self.surface_under(position)?;
+        if !window_resize_surface_allowed(self.popups.find_popup(&surface).is_some()) {
+            return None;
+        }
         let id = self.window_id_for_surface(&surface)?;
         let window = self.world.window(id)?;
         if window.presentation() != Presentation::Normal {
@@ -1523,9 +1546,13 @@ impl MioState {
             ButtonState::Pressed => {
                 self.activate_virtual_output_at(pointer_location);
                 let camera = *self.world.camera();
+                let window = self
+                    .surface_under(pointer_location)
+                    .and_then(|(surface, _)| self.window_id_for_surface(&surface));
                 self.pending_camera_drag = Some(PendingCameraDrag {
                     button,
                     start: pointer_location,
+                    window,
                     start_camera_x: camera.position().x,
                     start_camera_y: camera.position().y,
                     start_zoom: camera.zoom(),
@@ -1568,6 +1595,7 @@ impl MioState {
                     CameraButtonResult::ReplayClick {
                         button: drag.button,
                         press_time: drag.press_time,
+                        window: drag.window,
                     }
                 }
             }
@@ -1657,7 +1685,11 @@ impl MioState {
 enum CameraButtonResult {
     Forward,
     Consumed,
-    ReplayClick { button: u32, press_time: u32 },
+    ReplayClick {
+        button: u32,
+        press_time: u32,
+        window: Option<mio_core::WindowId>,
+    },
 }
 
 fn camera_drag_started(delta_x: f64, delta_y: f64) -> bool {
@@ -1783,6 +1815,10 @@ fn should_consume_focus_click(
         && target.is_some_and(|id| focused != Some(id))
 }
 
+const fn window_resize_surface_allowed(is_popup: bool) -> bool {
+    !is_popup
+}
+
 const fn mouse_button_code(button: MouseButton) -> u32 {
     match button {
         MouseButton::Left => BTN_LEFT,
@@ -1862,6 +1898,18 @@ fn pending_click_matches(
         && first.window == window
         && now <= first.deadline
         && delta.x.hypot(delta.y) <= DOUBLE_CLICK_DISTANCE
+}
+
+fn pointer_click_target(
+    deferred_camera_click: bool,
+    pressed_window: Option<mio_core::WindowId>,
+    release_window: Option<mio_core::WindowId>,
+) -> Option<mio_core::WindowId> {
+    if deferred_camera_click {
+        pressed_window
+    } else {
+        release_window
+    }
 }
 
 fn camera_zoom_from_scroll(current: f64, vertical_scroll: f64) -> f64 {
@@ -2001,6 +2049,12 @@ mod edge_tests {
     use smithay::utils::{Logical, Rectangle};
 
     use super::*;
+
+    #[test]
+    fn popup_surfaces_never_start_parent_window_resize() {
+        assert!(window_resize_surface_allowed(false));
+        assert!(!window_resize_surface_allowed(true));
+    }
 
     #[test]
     fn camera_drag_tracks_pixels_and_zoom_in_world_coordinates() {
@@ -2270,6 +2324,21 @@ mod edge_tests {
             Some(window),
             first.deadline + Duration::from_millis(1)
         ));
+    }
+
+    #[test]
+    fn deferred_camera_click_keeps_the_press_target() {
+        let pressed = mio_core::WindowId::from_u64(7);
+        let release = mio_core::WindowId::from_u64(8);
+        assert_eq!(
+            pointer_click_target(true, Some(pressed), Some(release)),
+            Some(pressed)
+        );
+        assert_eq!(pointer_click_target(true, None, Some(release)), None);
+        assert_eq!(
+            pointer_click_target(false, None, Some(release)),
+            Some(release)
+        );
     }
 
     #[test]

@@ -8,8 +8,8 @@ use smithay::{
     wayland::{
         buffer::BufferHandler,
         compositor::{
-            get_parent, is_sync_subsurface, CompositorClientState, CompositorHandler,
-            CompositorState,
+            get_parent, is_sync_subsurface, with_states, CompositorClientState, CompositorHandler,
+            CompositorState, SurfaceAttributes,
         },
         shm::{ShmHandler, ShmState},
     },
@@ -50,6 +50,23 @@ impl CompositorHandler for MioState {
         }
         layer_shell::handle_commit(self, surface);
         xdg_shell::handle_commit(self, surface);
+        if let Some(icon) = self
+            .dnd_icon
+            .as_mut()
+            .filter(|icon| &icon.surface == surface)
+        {
+            with_states(surface, |states| {
+                if let Some(buffer_delta) = states
+                    .cached_state
+                    .get::<SurfaceAttributes>()
+                    .current()
+                    .buffer_delta
+                    .take()
+                {
+                    icon.offset += buffer_delta;
+                }
+            });
+        }
         if let Some(sender) = &self.redraw_sender {
             let _ = sender.send(());
         }

@@ -17,7 +17,7 @@ use smithay::{
     utils::{Buffer as BufferCoord, Rectangle, Size},
     wayland::shm::{with_buffer_contents, with_buffer_contents_mut},
 };
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::state::MioState;
 
@@ -53,7 +53,12 @@ impl GlobalDispatch<ZwlrScreencopyManagerV1, ()> for MioState {
         _global_data: &(),
         data_init: &mut DataInit<'_, Self>,
     ) {
-        data_init.init(resource, ());
+        let resource = data_init.init(resource, ());
+        info!(
+            target: "mio_compositor::screencopy",
+            version = resource.version(),
+            "screencopy client bound"
+        );
     }
 }
 
@@ -196,6 +201,10 @@ impl MioState {
         data: &FrameData,
         with_damage: bool,
     ) {
+        if self.session_locked {
+            frame.failed();
+            return;
+        }
         let Ok(mut used) = data.used.lock() else {
             frame.failed();
             return;
@@ -238,6 +247,17 @@ impl MioState {
             output_origin: data.output_origin,
             with_damage,
         });
+        info!(
+            target: "mio_compositor::screencopy",
+            with_damage,
+            width = data.region.size.w,
+            height = data.region.size.h,
+            pending = self.pending_screencopies.len(),
+            "screencopy queued"
+        );
+        if let Some(sender) = &self.redraw_sender {
+            let _ = sender.send(());
+        }
     }
 
     pub(crate) fn fulfill_screencopies<R>(
@@ -253,6 +273,9 @@ impl MioState {
         let fulfilled_any = !self.pending_screencopies.is_empty();
         for pending in self.pending_screencopies.drain(..) {
             if !pending.frame.is_alive() {
+                if pending.buffer.is_alive() {
+                    pending.buffer.release();
+                }
                 continue;
             }
             let read_region = Rectangle::new(
@@ -307,12 +330,25 @@ impl MioState {
                     pending
                         .frame
                         .ready(seconds_hi, seconds_lo, timestamp.subsec_nanos());
+                    info!(
+                        target: "mio_compositor::screencopy",
+                        with_damage = pending.with_damage,
+                        width = pending.region.size.w,
+                        height = pending.region.size.h,
+                        timestamp_ns = timestamp.as_nanos(),
+                        "screencopy ready"
+                    );
                 }
                 Ok(false) => pending.frame.failed(),
                 Err(error) => {
                     warn!(%error, "failed to read back screencopy framebuffer");
                     pending.frame.failed();
                 }
+            }
+            // Completing a screencopy frame does not release its wl_buffer. Portal
+            // clients wait for this event before recycling their PipeWire/SHM buffer.
+            if pending.buffer.is_alive() {
+                pending.buffer.release();
             }
         }
         fulfilled_any

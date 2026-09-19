@@ -128,16 +128,32 @@ uniform float tint;
 #endif
 
 void main() {
-    vec2 point = v_coords - vec2(0.5);
+    // The light core sits in the upper quarter of the element so most of the
+    // available area can carry its reflection below the Window edge.
+    vec2 point = v_coords - vec2(0.5, 0.25);
     float glow_half_width = max(glow_width * 0.5, 1.0);
     float horizontal_distance = abs(point.x * size.x);
-    float horizontal = 1.0 - smoothstep(glow_half_width * 0.56, glow_half_width, horizontal_distance);
+    float core_horizontal = 1.0 - smoothstep(
+        glow_half_width * 0.56,
+        glow_half_width,
+        horizontal_distance
+    );
+    float bloom_horizontal = 1.0 - smoothstep(
+        glow_half_width * 0.72,
+        glow_half_width * 1.75,
+        horizontal_distance
+    );
     float reveal_edge = mix(0.03, 0.5, reveal);
     float reveal_mask = 1.0 - smoothstep(max(reveal_edge - 0.08, 0.0), reveal_edge, abs(point.x));
-    horizontal *= reveal_mask;
+    core_horizontal *= reveal_mask;
+    bloom_horizontal *= reveal_mask;
     float distance = abs(point.y) / max(line_height, 0.001);
     float core = exp(-0.5 * distance * distance);
-    float halo = exp(-0.055 * distance * distance) * 0.28;
+    // A broad, low-energy halo makes the indicator read as emitted light while
+    // keeping the narrow core and the Window content legible.
+    float halo = exp(-0.024 * distance * distance) * 0.24;
+    float downward = smoothstep(0.0, line_height * 0.8, point.y);
+    float lower_glow = exp(-0.010 * distance * distance) * 0.32 * downward;
     float membrane_edge = 1.0 - smoothstep(0.46, 0.5, abs(point.x));
     // Keep the visible film just inside the Window. The surrounding halo may cross
     // the edge, but the film itself must remain legible on a light background.
@@ -145,7 +161,11 @@ void main() {
     float membrane_distance = abs(point.y + membrane_height * 0.42) / membrane_height;
     float membrane = (1.0 - smoothstep(0.12, 0.92, membrane_distance)) * 0.82;
     membrane *= membrane_edge * reveal_mask;
-    float opacity = glow_color.a * (horizontal * (core + halo) + membrane) * alpha;
+    float opacity = glow_color.a * (
+        core_horizontal * core
+        + bloom_horizontal * (halo + lower_glow)
+        + membrane
+    ) * alpha;
     opacity = min(opacity, 1.0);
     vec3 color = glow_color.rgb * opacity;
 #if defined(DEBUG_FLAGS)
@@ -214,12 +234,12 @@ fn focus_glow_geometry(
     window_geometry: Rectangle<i32, Logical>,
     height: i32,
 ) -> Rectangle<i32, Logical> {
-    let glow_height = height.saturating_mul(8).max(16);
+    let glow_height = height.saturating_mul(16).max(32);
     let center_y = window_geometry.loc.y.saturating_add(window_geometry.size.h);
     Rectangle::new(
         (
             window_geometry.loc.x,
-            center_y.saturating_sub(glow_height / 2),
+            center_y.saturating_sub(glow_height / 4),
         )
             .into(),
         (window_geometry.size.w.max(1), glow_height).into(),
@@ -995,7 +1015,7 @@ fn smoothed_wake_segments(
             CursorWakeSegment {
                 start: pair[0].position,
                 end: end.position,
-                strength: (pair[0].strength + end.strength) * 0.5,
+                strength: f32::midpoint(pair[0].strength, end.strength),
             },
             age.clamp(0.0, 1.0) as f32,
         ));
@@ -1700,37 +1720,27 @@ void main() {
         color.a = combined_alpha;
     } else {
         float noise = water_noise(local * vec2(5.0, 3.0));
-        float disturbance = sin(transition * 3.14159265);
-        float closing = transition_direction < 0 ? 1.0 : 0.0;
-        float surface_y = mix(1.08, -0.08, transition);
-        float surface_distance = local.y - surface_y;
-        float wave = exp(-pow(surface_distance / 0.065, 2.0)) * disturbance * closing;
+        float animated = min(abs(float(transition_direction)), 1.0);
+        float disturbance = sin(transition * 3.14159265) * animated;
+        vec2 liquid_phase = vec2(disturbance * 0.31, -disturbance * 0.23);
+        float noise_x = water_noise(local * vec2(3.7, 4.3) + vec2(2.1, 0.7) + liquid_phase);
+        float noise_y = water_noise(local * vec2(4.1, 3.5) + vec2(0.4, 2.8) - liquid_phase.yx);
         vec2 flow = vec2(
-            sin(local.y * 12.0 + transition * 3.0) * 0.0016
-                + sin(local.x * 18.0 + transition * 4.0) * wave * 0.0042,
-            (noise - 0.5) * 0.0012
-                + sin(local.x * 11.0 - transition * 3.0) * wave * 0.0024
+            (noise_x - 0.5) * 0.0160 + sin(local.y * 7.0 + noise * 2.0) * 0.0024,
+            (noise_y - 0.5) * 0.0130 + sin(local.x * 6.0 - noise * 2.0) * 0.0020
         ) * disturbance;
         vec2 sample_coords = clamp(v_coords + flow, vec2(0.0), vec2(1.0));
-        float softness = 0.0014 * disturbance;
-        color = texture2D(tex, sample_coords) * 0.7;
-        color += texture2D(tex, clamp(sample_coords + vec2(softness, 0.0), vec2(0.0), vec2(1.0))) * 0.15;
-        color += texture2D(tex, clamp(sample_coords - vec2(softness, 0.0), vec2(0.0), vec2(1.0))) * 0.15;
-        float crest = exp(-pow((surface_distance + 0.024) / 0.032, 2.0)) * disturbance * closing;
-        float trough = exp(-pow((surface_distance - 0.036) / 0.048, 2.0)) * disturbance * closing;
-        color.rgb *= 1.0 + crest * 0.16 - trough * 0.075;
-        color.rgb += vec3(crest * 0.055) * color.a;
-        // Keep the image readable while the travelling surface crosses it, then
-        // let the final part dissolve quickly. Running this curve backwards gives
-        // Closing the same water-surface motion without hiding it under a 50% fade.
-        float fade = smoothstep(0.0, 0.72, transition);
-        float surface = smoothstep(-0.2, 0.2, transition - (0.5 + centered.y * 0.14));
-        // The opening texture may vary slightly while the water settles, but
-        // that variation must disappear at both animation endpoints. Otherwise
-        // a fully opaque Window remains faintly translucent after opening.
-        float opening_texture = mix(0.95, 1.0, smoothstep(0.25, 0.75, noise));
-        float opening_settle = mix(1.0, opening_texture, disturbance);
-        transition_mask = fade * mix(opening_settle, mix(0.52, 1.0, surface), closing);
+        float softness = 0.0042 * disturbance;
+        color = texture2D(tex, sample_coords) * 0.54;
+        color += texture2D(tex, clamp(sample_coords + vec2(softness, softness * 0.35), vec2(0.0), vec2(1.0))) * 0.23;
+        color += texture2D(tex, clamp(sample_coords - vec2(softness, softness * 0.35), vec2(0.0), vec2(1.0))) * 0.23;
+        color.rgb *= mix(1.0, mix(0.94, 1.06, noise), disturbance);
+
+        // The whole image is one water surface. Fade every part at the same time;
+        // low-frequency variation only softens the image, never sweeps across it.
+        float fade = smoothstep(0.02, 0.98, transition);
+        float dissolve_texture = mix(1.0, mix(0.70, 1.0, noise), disturbance);
+        transition_mask = fade * dissolve_texture;
     }
 #if defined(NO_ALPHA)
     color.a = 1.0;
@@ -2279,7 +2289,7 @@ mod tests {
         let window = Rectangle::new((300, 200).into(), (640, 480).into());
         assert_eq!(
             focus_glow_geometry(window, 3),
-            Rectangle::new((300, 668).into(), (640, 24).into())
+            Rectangle::new((300, 668).into(), (640, 48).into())
         );
     }
 
@@ -2313,8 +2323,11 @@ mod tests {
         assert!(ROUNDING_SHADER.contains("uniform int transition_effect;"));
         assert!(ROUNDING_SHADER.contains("uniform int transition_direction;"));
         assert!(ROUNDING_SHADER.contains("float water_noise(vec2 point)"));
-        assert!(ROUNDING_SHADER.contains("transition_mask = fade"));
-        assert!(ROUNDING_SHADER.contains("mix(1.0, opening_texture, disturbance)"));
+        assert!(ROUNDING_SHADER.contains("The whole image is one water surface"));
+        assert!(ROUNDING_SHADER.contains("transition_mask = fade * dissolve_texture"));
+        assert!(!ROUNDING_SHADER.contains("float waterline"));
+        assert!(!ROUNDING_SHADER.contains("float surface_y"));
+        assert!(!ROUNDING_SHADER.contains("float closing ="));
         assert!(!ROUNDING_SHADER.contains("normalize(centered"));
     }
 

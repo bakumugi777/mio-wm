@@ -178,7 +178,7 @@ impl Default for Appearance {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KeyBinding {
     pub chord: KeyChord,
     pub action: ConfigAction,
@@ -204,11 +204,12 @@ pub enum Key {
     Letter(char),
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ConfigAction {
     Close,
     Camera(Direction),
     CameraNudge(Direction),
+    CameraZoom(f64),
     CycleOutput,
     Focus(Direction),
     Move(Direction),
@@ -217,6 +218,7 @@ pub enum ConfigAction {
     ToggleFloating,
     ToggleFullscreen,
     ToggleMaximized,
+    ToggleWindowSize,
     ToggleOpacity,
     ToggleBlur,
     ToggleCursorWake,
@@ -687,7 +689,18 @@ fn parse_appearance(node: &KdlNode, appearance: &mut Appearance) -> Result<(), C
 
 fn parse_binding(node: &KdlNode) -> Result<KeyBinding, ConfigError> {
     let chord = KeyChord::from_str(node_string_at(node, 0)?)?;
-    let action = parse_action(node_string_at(node, 1)?)?;
+    let action_name = node_string_at(node, 1)?;
+    let action = if action_name == "camera-zoom" {
+        let zoom = node_number_at(node, 2)?;
+        if !(0.1..=1.0).contains(&zoom) {
+            return Err(ConfigError::new(
+                "camera-zoom bind value must be between 0.1 and 1.0",
+            ));
+        }
+        ConfigAction::CameraZoom(zoom)
+    } else {
+        parse_action(action_name)?
+    };
     Ok(KeyBinding { chord, action })
 }
 
@@ -1088,6 +1101,7 @@ fn parse_action(value: &str) -> Result<ConfigAction, ConfigError> {
         "toggle-floating" => Ok(ConfigAction::ToggleFloating),
         "toggle-fullscreen" => Ok(ConfigAction::ToggleFullscreen),
         "toggle-maximized" => Ok(ConfigAction::ToggleMaximized),
+        "toggle-window-size" => Ok(ConfigAction::ToggleWindowSize),
         "toggle-opacity" => Ok(ConfigAction::ToggleOpacity),
         "toggle-blur" => Ok(ConfigAction::ToggleBlur),
         "toggle-cursor-wake" => Ok(ConfigAction::ToggleCursorWake),
@@ -1123,17 +1137,30 @@ fn default_bindings() -> Vec<KeyBinding> {
         ("Up", Direction::Up),
         ("Down", Direction::Down),
     ] {
-        push(&format!("Alt+{key}"), ConfigAction::Focus(direction));
-        push(&format!("Ctrl+Alt+{key}"), ConfigAction::Camera(direction));
+        push(&format!("Super+{key}"), ConfigAction::Focus(direction));
         push(
-            &format!("Alt+Shift+{key}"),
-            ConfigAction::CameraNudge(direction),
+            &format!("Super+Ctrl+{key}"),
+            ConfigAction::Camera(direction),
         );
-        push(&format!("Ctrl+Shift+{key}"), ConfigAction::Move(direction));
+        push(&format!("Super+Shift+{key}"), ConfigAction::Move(direction));
         push(
-            &format!("Ctrl+Alt+Shift+{key}"),
+            &format!("Super+Ctrl+Shift+{key}"),
             ConfigAction::Resize(direction),
         );
+    }
+    for (key, zoom) in [
+        ('1', 0.1),
+        ('2', 0.2),
+        ('3', 0.3),
+        ('4', 0.4),
+        ('5', 0.5),
+        ('6', 0.6),
+        ('7', 0.7),
+        ('8', 0.8),
+        ('9', 0.9),
+        ('0', 1.0),
+    ] {
+        push(&format!("Super+{key}"), ConfigAction::CameraZoom(zoom));
     }
     for (key, direction) in [
         ("H", Direction::Left),
@@ -1141,23 +1168,33 @@ fn default_bindings() -> Vec<KeyBinding> {
         ("K", Direction::Up),
         ("J", Direction::Down),
     ] {
+        push(&format!("Super+{key}"), ConfigAction::Focus(direction));
         push(
-            &format!("Ctrl+Alt+Shift+{key}"),
+            &format!("Super+Ctrl+{key}"),
+            ConfigAction::Camera(direction),
+        );
+        push(
+            &format!("Super+Ctrl+Shift+{key}"),
+            ConfigAction::CameraNudge(direction),
+        );
+        push(
+            &format!("Super+Shift+{key}"),
             ConfigAction::PlaceNext(direction),
         );
     }
-    push("Ctrl+Alt+F", ConfigAction::ToggleFloating);
-    push("Ctrl+Alt+N", ConfigAction::CycleOutput);
-    push("Ctrl+Alt+Enter", ConfigAction::ToggleFullscreen);
-    push("Ctrl+Alt+M", ConfigAction::ToggleMaximized);
-    push("Ctrl+Alt+Q", ConfigAction::Close);
-    push("Ctrl+Alt+O", ConfigAction::ToggleOpacity);
-    push("Ctrl+Alt+B", ConfigAction::ToggleBlur);
-    push("Ctrl+Alt+W", ConfigAction::ToggleCursorWake);
-    push("Ctrl+Alt+Shift+O", ConfigAction::ClearOpacity);
-    push("Ctrl+Alt+V", ConfigAction::ToggleOverview);
-    push("Ctrl+Alt+S", ConfigAction::SelectOverview);
-    push("Ctrl+Alt+R", ConfigAction::ReloadConfig);
+    push("Super+F", ConfigAction::ToggleFloating);
+    push("Super+N", ConfigAction::CycleOutput);
+    push("Super+Enter", ConfigAction::ToggleFullscreen);
+    push("Super+M", ConfigAction::ToggleMaximized);
+    push("Super+Z", ConfigAction::ToggleWindowSize);
+    push("Super+Q", ConfigAction::Close);
+    push("Super+O", ConfigAction::ToggleOpacity);
+    push("Super+B", ConfigAction::ToggleBlur);
+    push("Super+W", ConfigAction::ToggleCursorWake);
+    push("Super+Shift+O", ConfigAction::ClearOpacity);
+    push("Super+V", ConfigAction::ToggleOverview);
+    push("Super+S", ConfigAction::SelectOverview);
+    push("Super+R", ConfigAction::ReloadConfig);
     bindings
 }
 
@@ -1197,6 +1234,16 @@ mod tests {
             [1.0, 1.0, 1.0, 46.0 / 255.0]
         );
         assert_eq!(config.mouse.close_window_clicks, 3);
+    }
+
+    #[test]
+    fn example_keybindings_match_the_builtin_defaults() {
+        let example = parse(include_str!("../../../config/mio.kdl")).unwrap();
+        let defaults = default_bindings();
+        assert_eq!(example.bindings.len(), defaults.len());
+        assert!(defaults
+            .iter()
+            .all(|binding| example.bindings.contains(binding)));
     }
 
     #[test]
@@ -1397,6 +1444,29 @@ mod tests {
             parse_action("toggle-blur").unwrap(),
             ConfigAction::ToggleBlur
         );
+    }
+
+    #[test]
+    fn parses_window_size_toggle_action() {
+        assert_eq!(
+            parse_action("toggle-window-size").unwrap(),
+            ConfigAction::ToggleWindowSize
+        );
+    }
+
+    #[test]
+    fn parses_absolute_camera_zoom_bindings() {
+        let config = parse(
+            "bind \"Super+5\" \"camera-zoom\" 0.55\n\
+             bind \"Super+0\" \"camera-zoom\" 1.0",
+        )
+        .unwrap();
+        assert_eq!(config.bindings.len(), 2);
+        assert_eq!(config.bindings[0].action, ConfigAction::CameraZoom(0.55));
+        assert_eq!(config.bindings[1].action, ConfigAction::CameraZoom(1.0));
+        assert!(parse("bind \"Super+1\" \"camera-zoom\" 0.09").is_err());
+        assert!(parse("bind \"Super+0\" \"camera-zoom\" 1.01").is_err());
+        assert!(parse("bind \"Super+5\" \"camera-zoom\"").is_err());
     }
 
     #[test]

@@ -701,10 +701,63 @@ impl World {
         Ok(())
     }
 
+    /// Toggles a Window between the configured initial width and half of that width.
+    /// Both targets use the configured initial height.
+    ///
+    /// # Errors
+    /// Returns an error for an unknown Window or an invalid tiled resize.
+    pub fn toggle_window_size(
+        &mut self,
+        id: WindowId,
+        initial_size: GridSize,
+    ) -> Result<(), WorldError> {
+        let current_width = self
+            .window(id)
+            .ok_or(WorldError::UnknownWindow(id))?
+            .rect()
+            .width();
+        let initial_width = initial_size.width();
+        let half_width = initial_width / 2 + initial_width % 2;
+        let target_width = if current_width == initial_width || current_width < half_width {
+            half_width
+        } else {
+            initial_width
+        };
+        let target = GridSize::new(target_width, initial_size.height())?;
+        self.resize_window(id, target)
+    }
+
     pub fn focus_direction(&mut self, direction: Direction) -> Option<WindowId> {
-        let next = self.directional_neighbor(direction)?;
+        let next = self.directional_neighbor(direction).or_else(|| {
+            self.focused()
+                .is_none()
+                .then(|| self.focus_entry_candidate())
+                .flatten()
+        })?;
         self.focus.set(Some(next));
         Some(next)
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn focus_entry_candidate(&self) -> Option<WindowId> {
+        let viewport = self.camera.viewport_size();
+        let camera_x = self.camera.position().x + viewport.width() as f64 / 2.0;
+        let camera_y = self.camera.position().y + viewport.height() as f64 / 2.0;
+
+        self.windows
+            .values()
+            .map(|window| {
+                let (window_x, window_y) = window.rect().center();
+                let dx = window_x - camera_x;
+                let dy = window_y - camera_y;
+                (window.id(), dx.mul_add(dx, dy * dy))
+            })
+            .min_by(|left, right| {
+                left.1
+                    .total_cmp(&right.1)
+                    .then_with(|| left.0.cmp(&right.0))
+            })
+            .map(|(id, _)| id)
     }
 
     #[must_use]
@@ -920,6 +973,10 @@ impl World {
             }
             Action::ResizeWindowContinuousRect { id, rect } => {
                 self.resize_window_continuous_rect(id, rect)?;
+                Ok(ActionOutcome::Applied)
+            }
+            Action::ToggleWindowSize { id, initial_size } => {
+                self.toggle_window_size(id, initial_size)?;
                 Ok(ActionOutcome::Applied)
             }
             Action::SetNextPlacement(direction) => {
@@ -1603,6 +1660,20 @@ mod tests {
     }
 
     #[test]
+    fn directional_focus_recovers_from_empty_focus_near_the_camera() {
+        let mut world = world();
+        let near = world.add_window(rect(1, 1, 1, 1)).unwrap();
+        let removed = world.add_window(rect(2, 1, 1, 1)).unwrap();
+        let far = world.add_window(rect(20, 20, 1, 1)).unwrap();
+        world.focus_window(removed).unwrap();
+        world.remove_window(removed).unwrap();
+
+        assert_eq!(world.focused(), None);
+        assert_eq!(world.focus_direction(Direction::Right), Some(near));
+        assert_ne!(world.focused(), Some(far));
+    }
+
+    #[test]
     fn placement_uses_free_world_space_without_resizing_existing_windows() {
         let mut world = world();
         let first = world.place_window(GridSize::new(2, 2).unwrap()).unwrap();
@@ -1805,6 +1876,38 @@ mod tests {
 
         assert_eq!(world.window(id).unwrap().rect().size(), initial_size);
         assert_camera_position(&world, 12.0, -8.0);
+    }
+
+    #[test]
+    fn window_size_toggle_uses_half_and_initial_width_thresholds() {
+        let mut world = world();
+        let id = world.add_window(rect(0, 0, 2, 3)).unwrap();
+        let initial_size = GridSize::new(8, 6).unwrap();
+        let toggle = Action::ToggleWindowSize { id, initial_size };
+
+        world.apply(toggle).unwrap();
+        assert_eq!(
+            world.window(id).unwrap().rect().size(),
+            GridSize::new(4, 6).unwrap()
+        );
+
+        world.apply(toggle).unwrap();
+        assert_eq!(world.window(id).unwrap().rect().size(), initial_size);
+
+        world.apply(toggle).unwrap();
+        assert_eq!(
+            world.window(id).unwrap().rect().size(),
+            GridSize::new(4, 6).unwrap()
+        );
+
+        world
+            .apply(Action::ResizeWindow {
+                id,
+                size: GridSize::new(6, 2).unwrap(),
+            })
+            .unwrap();
+        world.apply(toggle).unwrap();
+        assert_eq!(world.window(id).unwrap().rect().size(), initial_size);
     }
 
     #[test]
@@ -2011,6 +2114,33 @@ mod tests {
         assert_opacity(
             world.window(first).unwrap().effective_properties().opacity,
             0.8,
+        );
+    }
+
+    #[test]
+    fn replacing_config_properties_preserves_runtime_overrides() {
+        let mut world = world();
+        let id = world.add_window(rect(0, 0, 1, 1)).unwrap();
+        world
+            .set_runtime_window_property(id, WindowProperty::Opacity(0.4))
+            .unwrap();
+
+        world
+            .replace_config_window_properties(
+                id,
+                &[WindowProperty::Opacity(0.7), WindowProperty::Blur(true)],
+            )
+            .unwrap();
+
+        let properties = world.window(id).unwrap().effective_properties();
+        assert_opacity(properties.opacity, 0.4);
+        assert!(properties.blur);
+        world
+            .clear_runtime_window_property(id, WindowPropertyKind::Opacity)
+            .unwrap();
+        assert_opacity(
+            world.window(id).unwrap().effective_properties().opacity,
+            0.7,
         );
     }
 

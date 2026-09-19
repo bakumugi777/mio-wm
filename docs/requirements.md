@@ -251,6 +251,8 @@ Windowはclose可能でなければならない。
 
 非focused Windowの破棄は現在のfocusやCamera位置を変更してはならない。通常のfocused
 Windowを破棄した場合は残存Windowを暗黙に選ばず、Seat focusを空にしてCamera位置を維持すること。
+この空のfocus状態からDirectional focusを実行した場合は、Camera中心に最も近い残存Windowを
+最初の基準としてfocusし、以後のDirectional focusは通常のWorld上の位置関係を使用すること。
 破棄したxdg-toplevelに生存中のparentがあれば、その親を汎用fallbackより優先し、通常の
 FocusWindow Actionで復帰するがCamera位置は変更しないこと。
 parent自身が一時的なdialogである場合は、直接parent、祖先、自動focus直前のWindowを
@@ -420,6 +422,14 @@ focusによってzoom値を暗黙に変更してはならない。Window resize�
 
 ---
 
+## FR-CAM-010
+
+KeybindからCameraの絶対zoom値を選択可能にすること。初期設定では`Super+1`から`Super+9`を
+`0.1`から`0.9`へ対応させ、`Super+0`を通常Cameraの最大倍率`1.0`へ対応させること。
+各bindのzoom値はKDLから変更可能とし、Mouseと同じ共有`CameraZoom` Actionを使用すること。
+
+---
+
 # 11. Overview要件
 
 ## FR-OV-001
@@ -557,6 +567,10 @@ resize cursorを表示すること。LMB dragが最寄りのGrid境界を越え�
 clientへ新しいsizeを通知すること。応答前のbufferを縦横別々の倍率で変形してはならない。
 Tiled Windowでは既存の隣接Window連鎖を利用し、無効な候補では最後の有効geometryを維持すること。
 drag中はfocusを維持し、終了後は対象へfocusするがCameraは移動しないこと。
+Window上で設定された`reset-window` buttonを複数clickした場合は、共有Actionによって
+`placement.initial-size`の初期幅とその半幅を切り替えること。現在幅が初期幅なら半幅、
+半幅未満なら半幅、それ以外なら初期幅とし、高さは初期高さへ戻すこと。同じActionを
+`toggle-window-size` keybindからも実行可能にすること。
 Window上でRMBを先に保持してMMBを押した場合は、対象の共有`ToggleFloating` Actionを予約する。
 最初のrelease時に実行し、成功後は対象へfocusするが
 Cameraは維持し、失敗時はfocusも変更しないこと。このchordのRMB/MMB pressと両方のreleaseは
@@ -653,14 +667,17 @@ session lockおよびexclusive layer-shellの入力規則はshortcut inhibitor�
 
 ## FR-IN-012
 
-nested開発backendでは`zwlr_screencopy_manager_v1`によるOutput全体または指定領域の
-SHM captureを提供すること。capture対象はCameraが最終的にOutputへ描画した内容とし、
+各backendでは`ext-image-copy-capture-v1`と
+`ext-output-image-capture-source-v1`によるOutput全体のSHM captureを提供すること。
+`zwlr_screencopy_manager_v1`はgrim等のlegacy clientとの互換用としてOutput全体または
+指定領域のcaptureを提供してよい。capture対象はCameraが最終的にOutputへ描画した内容とし、
 Worldを別layoutへ変換しないこと。client bufferはformat、寸法、stride、範囲を検証し、
 失敗時はprotocolのfailedまたはerrorを返すこと。
 
-初期実装の`copy_with_damage`はcapture領域全体をdamageとして通知してよい。
-本機能はnested開発用の無認証globalであり、system compositorで公開する前に
-security-contextまたはportal等による信頼境界を設けること。
+初期実装はcapture領域全体をdamageとして通知してよい。
+sandbox化されたapplicationの画面取得はportalの選択経路を使用すること。通常Wayland
+socketへ直接接続できる非sandbox clientは同じdesktop sessionの信頼領域として扱う。
+session lock中のcapture要求は拒否すること。
 
 ---
 
@@ -793,6 +810,15 @@ Windowやlayer-shell背景が存在しない領域へ描画するWorld背景色�
 
 ---
 
+## FR-APP-011
+
+通常Windowの表示gapはCamera zoomと同じ比率で縮尺すること。遠景でもWindow、gap、World上の
+占有範囲の対応を保ち、見た目では離れているのに配置判定では重なる状態を作らないこと。
+この縮尺はclient configure sizeを変更せず、popupおよびsubsurfaceを含むsurface tree全体で
+同じpresentation scaleを維持すること。
+
+---
+
 # 16. Window Rule要件
 
 ## FR-RULE-001
@@ -838,6 +864,14 @@ Window Ruleから以下のPropertyを設定可能にすること。
 ## FR-RULE-005
 
 Appearance用RuleとFloating用Rule等を別々の仕組みにせず、一つのWindow Rule systemとして提供すること。
+
+---
+
+## FR-RULE-006
+
+複数のWindow Ruleが一致した場合は設定ファイルの記述順にPropertyを合成し、同じPropertyは
+後に記述したRuleを優先すること。設定再読み込みまたはclient metadata変更時はConfig Rule層を
+再計算し、Runtime Override層は保持すること。
 
 ---
 
@@ -982,7 +1016,9 @@ session lock中は設定内容やエラーの有無をlock surfaceより上へ�
 
 ## FR-CONF-007
 
-設定ファイルの再読み込みを将来的にサポートすること。
+設定ファイルを実行中に再読み込みできること。新しい設定全体の検証に成功してから置き換え、
+失敗時は直前の有効な設定を維持すること。成功時は既存WindowのConfig Rule層を再計算するが、
+Window単位のRuntime Overrideと起動済みprocessは維持し、`spawn-at-startup`を再実行しないこと。
 
 ---
 
@@ -1244,13 +1280,13 @@ Mio単体でもcompositorとして成立すること。
 
 ## FR-IPC-001
 
-将来的に外部shellおよびCLI向けIPCを提供する。
+外部shellおよびCLI向けIPCを提供すること。
 
 ---
 
 ## FR-IPC-002
 
-IPCから最低限以下の状態を取得可能にすることを目標とする。
+IPCから最低限以下の状態を取得可能にすること。
 
 - Window一覧
 - focused Window
@@ -1266,7 +1302,7 @@ IPCから最低限以下の状態を取得可能にすることを目標とす�
 
 ## FR-IPC-003
 
-IPCから以下のActionを実行可能にすることを目標とする。
+IPCから以下のActionを実行可能にすること。
 
 - focus Window
 - Camera移動
@@ -1288,6 +1324,7 @@ command、不正なWindow IDまたはProperty値はcompositorを停止させず�
 responseを返すこと。
 `mioctl`はMioへ接続できない環境でも`--help`を表示し、commandと引数形式を確認可能にすること。
 `mioctl --version`もMioへ接続せずversionを表示すること。
+transport errorおよびIPCの`ok: false`応答では非ゼロ終了し、成功応答だけを成功終了とすること。
 `quit`はWindowやWorldへのActionではなくcompositor lifecycle操作としてevent loopを停止し、
 signal終了と同じ通常のcleanup経路を通ること。
 
@@ -1297,7 +1334,7 @@ signal終了と同じ通常のcleanup経路を通ること。
 
 続くAction APIとして`focus`、`camera-step`、`move-window`、`resize-window`、
 `toggle-floating`、`close`、`set-property`、`clear-property`を提供すること。directionは
-left / right / up / down、Propertyは共通Property systemのopacity / floatingを初期対象とする。
+left / right / up / down、Propertyは共通Property systemのopacity / floating / blurを対象とする。
 focus変更はWayland Seat activationへ、close要求は対象xdg-toplevelへ同期すること。
 
 ---

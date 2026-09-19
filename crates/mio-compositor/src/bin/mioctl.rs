@@ -55,8 +55,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     stream.shutdown(Shutdown::Write)?;
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
+    if response_is_error(&response) {
+        return Err(format!("Mio rejected request: {response}").into());
+    }
     println!("{response}");
     Ok(())
+}
+
+fn response_is_error(response: &str) -> bool {
+    response.starts_with("{\"ok\":false")
 }
 
 fn is_help(argument: &OsString) -> bool {
@@ -93,6 +100,7 @@ fn usage() -> &'static str {
         "  set-property ID floating BOOL\n",
         "  set-property ID blur BOOL\n",
         "  clear-property ID opacity|floating|blur\n",
+        "  set-opacity ID FLOAT | clear-opacity ID (compatibility aliases)\n",
         "\n",
         "DIR is left, right, up, or down. BOOL is true or false.\n",
         "Without --socket, MIO_SOCKET selects the Mio instance.\n",
@@ -104,7 +112,7 @@ fn usage() -> &'static str {
 mod tests {
     use std::ffi::OsString;
 
-    use super::{is_help, is_version, usage};
+    use super::{is_help, is_version, response_is_error, usage};
 
     #[test]
     fn recognizes_help_without_a_mio_connection() {
@@ -114,6 +122,7 @@ mod tests {
         assert!(!is_help(&OsString::from("state")));
         assert!(usage().contains("  quit\n"));
         assert!(usage().contains("set-property ID floating BOOL"));
+        assert!(usage().contains("set-opacity ID FLOAT"));
     }
 
     #[test]
@@ -121,5 +130,14 @@ mod tests {
         assert!(is_version(&OsString::from("--version")));
         assert!(is_version(&OsString::from("-V")));
         assert!(!is_version(&OsString::from("state")));
+    }
+
+    #[test]
+    fn server_errors_produce_a_failed_cli_result() {
+        assert!(response_is_error(
+            r#"{"ok":false,"error":"unknown window 9"}"#
+        ));
+        assert!(!response_is_error(r#"{"ok":true}"#));
+        assert!(!response_is_error(r#"{"ok":true,"windows":[]}"#));
     }
 }

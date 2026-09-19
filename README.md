@@ -6,6 +6,9 @@ Mio（澪）は、RustとSmithayで開発しているWaylandコンポジタ兼�
 Mioには従来型のワークスペースがありません。ウィンドウは一つの連続した2次元Worldに
 配置され、画面はそのWorldを見るCameraとして扱われます。
 
+初めて試す場合は[Installation](docs/installation.md)と
+[Getting Started](docs/getting-started.md)から始めてください。
+
 > [!WARNING]
 > マルチモニター対応は実験段階です。ネスト環境向けの仮想Outputと、単一Output向けの
 > 実験的なDRM/KMSバックエンドがありますが、ホットプラグ、異なる解像度やスケールの
@@ -22,6 +25,11 @@ NixOSでは、リポジトリに含まれる開発シェルを利用できます
 ```sh
 nix-shell
 ```
+
+通常のNixOS sessionとして導入するためのflake packageとNixOS moduleもあります。
+SDDMへの登録を含む設定例は[Installation](docs/installation.md)を参照してください。
+NixOS以外では`install.sh`を使い、release build、標準Wayland session entryの登録、
+manifestに基づくアンインストールを行えます。
 
 ## 開発用のネスト起動
 
@@ -60,14 +68,16 @@ RUST_LOG=info cargo run -p mio-compositor -- \
 VT切り替え時の停止と復帰には対応しています。次の項目はまだ未対応です。
 
 - 複数GPUと複数の物理Output
-- portal等の信頼境界を備えた直接バックエンドでの画面取得
 
 角丸、影、ウィンドウ枠、フォーカス水光、およびWindowの開閉遷移は直接バックエンドでも
 利用できます。
 カーソル航跡も直接バックエンドで利用でき、DRM cursor planeが使える場合はカーソル自体を
 歪ませず、完成済みの通常画面だけへ効果を適用します。
-無認証の`zwlr_screencopy_manager_v1`はnested開発バックエンドだけで広告され、直接
-バックエンドでは広告されません。
+標準の`ext-image-copy-capture-v1`と、互換用の`zwlr_screencopy_manager_v1`はnested・directの
+両バックエンドで利用できます。sandbox化されたアプリケーションはportalの選択画面を経由して
+取得します。Mioの通常Waylandソケットへ直接接続できる非sandboxプロセスは、同じdesktop
+sessionの信頼領域として扱われ、protocolへ直接アクセスできます。session lock中のcapture
+要求は拒否されます。
 起動時に選択した単一GPUでは、稼働中Outputの切断、再接続、およびmode一覧の変更を
 再走査して復帰します。起動時に接続済みOutputがなくても終了せず、最初の接続を待機します。
 `--command`と`spawn-at-startup`のアプリケーションも最初の実Outputが利用可能になるまで
@@ -92,12 +102,31 @@ spawn-at-startup "kaname" "--applications"
 WaylandソケットとIPCソケットの準備後に一度だけ実行され、設定の再読み込みでは再実行
 されません。
 
-子プロセスにはMioが作成した`WAYLAND_DISPLAY`と`MIO_SOCKET`が渡されます。
+子プロセスにはMioが作成した`WAYLAND_DISPLAY`と`MIO_SOCKET`、Mioセッションを
+識別する`XDG_CURRENT_DESKTOP=mio`と`XDG_SESSION_DESKTOP=mio`、実行中のadapterを示す
+`MIO_BACKEND=winit`または`MIO_BACKEND=udev`が渡されます。
 `xwayland-satellite`が有効な場合は、互換用の`DISPLAY`も渡されます。
+
+## OBSによる画面録画
+
+`xdg-desktop-portal`と`xdg-desktop-portal-wlr`をOSへ導入してください。
+NixOS用の参考設定は`memo/nix/configuration.nix`の`xdg.portal`にあります。設定を
+現在のNixOS構成へ反映して再buildするまでは、portalのsystemd user unitは作成されません。
+
+`config/mio.kdl`はMio起動時に`dbus-update-activation-environment`を実行し、portalなどの
+D-Bus/systemd起動サービスへMioのWayland socketとdesktop名を渡します。direct backendでは
+wlr portalとdesktop portalも順番に再接続しますが、nested backendではホスト側portalを
+再起動しません。その後OBSでは、
+niriで録画に使用できているものと同じ「スクリーンキャプチャ」を選択します。OBSの版や
+翻訳によってソース名が異なるため、別名のソースが存在することは前提にしません。この経路では
+Smithay標準の`ext-image-copy-capture-v1`が優先され、legacy `wlr-screencopy`はgrim等との
+互換用に残ります。通常Waylandソケットへ直接接続できる非sandbox clientはportalを経由せず
+capture protocolを利用できるため、Mioはその範囲をdesktop sessionの信頼境界とします。
 
 ## 設定
 
 設定例は[config/mio.kdl](config/mio.kdl)にあります。標準の配置先は次のいずれかです。
+全設定項目とkeybind Action名は[設定リファレンス](docs/configuration.md)にまとめています。
 
 ```text
 $XDG_CONFIG_HOME/mio/config.kdl
@@ -115,30 +144,36 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 
 ## 基本操作
 
-既定のキー割り当ては、Mioをniriなどの中でネスト起動しても届きやすい組み合わせにして
-あります。
+既定のキー割り当てはSuperを共通の起点とし、機能群ごとにShiftまたはCtrlだけを加えます。
 
 | キー | 操作 |
 |---|---|
-| `Alt+Arrow` | World上の指定方向へフォーカスを移し、必要ならCameraで表示する |
-| `Ctrl+Alt+Arrow` | Cameraを1画面分移動する |
-| `Alt+Shift+Arrow` | CameraをGrid 1セル分移動する |
-| `Ctrl+Shift+Arrow` | フォーカス中のウィンドウをGrid 1セル分移動する |
-| `Ctrl+Alt+Shift+Arrow` | フォーカス中のウィンドウをGrid 1セル分リサイズする |
-| `Ctrl+Alt+Shift+H/J/K/L` | 次のウィンドウを左／下／上／右へ配置する |
-| `Ctrl+Alt+N` | 操作対象のOutput Cameraを切り替える |
-| `Ctrl+Alt+F` | タイル／フローティングを切り替える |
-| `Ctrl+Alt+Enter` | フルスクリーンを切り替える |
-| `Ctrl+Alt+M` | 最大化を切り替える |
-| `Ctrl+Alt+Q` | フォーカス中のウィンドウを閉じる |
-| `Ctrl+Alt+O` | 不透明度を1.0と0.8の間で切り替える |
-| `Ctrl+Alt+Shift+O` | 実行時の不透明度上書きを解除する |
-| `Ctrl+Alt+V` | Overview表示を切り替える |
-| `Ctrl+Alt+S` | フォーカス中のウィンドウを選択し、通常倍率へ戻す |
-| `Ctrl+Alt+B` | フォーカス中のウィンドウのぼかしを切り替える |
-| `Ctrl+Alt+W` | カーソル航跡を切り替える |
+| `Super+Arrow` / `Super+H/J/K/L` | World上の指定方向へフォーカスを移し、必要ならCameraで表示する |
+| `Super+Ctrl+Arrow` / `Super+Ctrl+H/J/K/L` | Cameraを1画面分、左／下／上／右へ移動する |
+| `Super+Ctrl+Shift+H/J/K/L` | CameraをGrid 1セル分、左／下／上／右へ移動する |
+| `Super+1`〜`Super+9` | Cameraの絶対倍率を0.1〜0.9へ変更する |
+| `Super+0` | Cameraを最大倍率1.0へ戻す |
+| `Super+Shift+Arrow` | フォーカス中のウィンドウをGrid 1セル分移動する |
+| `Super+Ctrl+Shift+Arrow` | フォーカス中のウィンドウをGrid 1セル分リサイズする |
+| `Super+Shift+H/J/K/L` | 次のウィンドウを左／下／上／右へ配置する |
+| `Super+N` | 操作対象のOutput Cameraを切り替える |
+| `Super+F` | タイル／フローティングを切り替える |
+| `Super+Enter` | フルスクリーンを切り替える |
+| `Super+M` | 最大化を切り替える |
+| `Super+Z` | ウィンドウの初期幅／半幅を切り替える |
+| `Super+Q` | フォーカス中のウィンドウを閉じる |
+| `Super+O` | 不透明度を1.0と0.8の間で切り替える |
+| `Super+Shift+O` | 実行時の不透明度上書きを解除する |
+| `Super+V` | Overview表示を切り替える |
+| `Super+S` | フォーカス中のウィンドウを選択し、通常倍率へ戻す |
+| `Super+B` | フォーカス中のウィンドウのぼかしを切り替える |
+| `Super+W` | カーソル航跡を切り替える |
+| `Super+R` | 設定を再読み込みする |
 
 マウス操作は[config/mio.kdl](config/mio.kdl)の`mouse`セクションで変更できます。
+右ダブルクリックと同じ幅切り替えは、任意のキーへ
+割り当てられます。例えば`bind "Super+Z" "toggle-window-size"`と記述します。
+Camera倍率は`bind "Super+5" "camera-zoom" 0.5`のように個別に変更できます。
 既定の考え方は次のとおりです。
 
 - 右ドラッグでCameraを滑らかに移動する
@@ -155,7 +190,8 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 ## IPCとmioctl
 
 Mio内で起動した端末には`MIO_SOCKET`が渡されるため、`mioctl`からそのMioインスタンスを
-操作できます。
+操作できます。全command、応答形式、終了statusは[IPCリファレンス](docs/ipc.md)を
+参照してください。compositor自体のoptionは[CLIリファレンス](docs/cli.md)にあります。
 
 ```sh
 cargo run -p mio-compositor --bin mioctl -- focused-window
@@ -212,7 +248,7 @@ WINIT_UNIX_BACKEND=wayland RUST_LOG=info cargo run -p mio-compositor -- \
   --command foot
 ```
 
-左右どちらかをクリックすると、そのCameraが操作対象になります。`Ctrl+Alt+N`でも切り替え
+左右どちらかをクリックすると、そのCameraが操作対象になります。`Super+N`でも切り替え
 できます。これは開発用機能であり、物理マルチモニターの完成を意味しません。
 
 ## X11互換
@@ -255,9 +291,38 @@ RUST_LOG=info,mio_compositor::diagnostics=debug \
 cargo run -p mio-compositor -- --config config/mio.kdl --command foot
 ```
 
+長時間運用時のメモリ、thread、file descriptor数を記録する場合は、別のTTYから次を実行します。
+監視は既に起動している最新の`mio-compositor`を自動検出し、既定では60秒間隔で
+`/tmp/mio-long-run.tsv`へ追記します。compositor本体の挙動には影響しません。
+
+```sh
+contrib/mio-long-run-monitor
+```
+
+対象PID、間隔、保存先を明示することもできます。
+
+```sh
+contrib/mio-long-run-monitor \
+  --pid 12345 \
+  --interval 30 \
+  --output /tmp/mio-long-run.tsv
+```
+
 ## 設計資料
 
 - [docs/requirements.md](docs/requirements.md): 要件と実装フェーズ
+- [docs/installation.md](docs/installation.md): 現在のbuild・導入方法と未整備範囲
+- [docs/getting-started.md](docs/getting-started.md): nested起動から正常終了までの最短手順
+- [docs/configuration.md](docs/configuration.md): KDL設定とkeybind Actionの公開仕様
+- [docs/keybindings.md](docs/keybindings.md): 標準keybindと変更方法
+- [docs/camera.md](docs/camera.md): Camera Action、追従、zoom、複数Outputでの意味
+- [docs/overview.md](docs/overview.md): Overviewの操作とWorldとの関係
+- [docs/window-properties.md](docs/window-properties.md): Window Ruleの合成とProperty優先順位
+- [docs/cli.md](docs/cli.md): mio-compositorのCLI option
+- [docs/ipc.md](docs/ipc.md): mioctl、IPC command、JSON応答
+- [docs/troubleshooting.md](docs/troubleshooting.md): 起動、設定、capture等の問題切り分け
+- [docs/architecture-overview.md](docs/architecture-overview.md): Mio設計の日本語概要
+- [docs/release-readiness.md](docs/release-readiness.md): 1.0監査結果と残作業
 - [docs/spec.md](docs/spec.md): 詳細仕様
 - [docs/architecture.md](docs/architecture.md): コンポーネント境界と設計
 - [docs/smithay-notes.md](docs/smithay-notes.md): Smithay APIの調査記録

@@ -1,5 +1,8 @@
 // Mio configuration example.
 // Commands are executed once when Mio starts. Each quoted value is one argv item.
+// Export Mio's display. On the direct backend, reconnect persistent portal services
+// to this socket without disturbing the compositor which hosts a nested Mio.
+spawn-at-startup "sh" "-c" "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP && if [ \"$MIO_BACKEND\" = udev ]; then systemctl --user reset-failed xdg-desktop-portal-wlr.service && systemctl --user restart xdg-desktop-portal-wlr.service && systemctl --user restart xdg-desktop-portal.service; fi"
 spawn-at-startup "waybar"
 // spawn-at-startup "kaname" "--applications"
 
@@ -12,11 +15,12 @@ appearance {
     focus-indicator-color "#FFFFFF"
     // Zero disables clipping.
     corner-radius 16
-    // Logical pixels inset from every edge. Adjacent Windows have twice this gap.
+    // Logical pixels inset from every edge, scaled with Camera zoom on screen.
+    // Adjacent Windows have twice this gap.
     // Maximized and fullscreen Windows are not inset.
     gaps 25 
     opacity 1.0
-    // Ctrl+Alt+O alternates between these two values.
+    // Super+O alternates between these two values.
     opacity-toggle 1.0 0.8
 }
 
@@ -59,7 +63,7 @@ mouse {
     camera-zoom "right"
     move-window "right" "left"
     resize-window "left"
-    // Double-click to restore placement.initial-size and reveal the Window.
+    // Double-click to toggle between the initial width and half width.
     reset-window "right" clicks=2
     toggle-floating "right" "middle"
     place-next "middle"
@@ -75,43 +79,64 @@ edge-command "bottom" "wofi" "--show" "drun"
 
 // Declaring any bind replaces the built-in binding set, so list every binding
 // that should remain available.
-bind "Alt+Left" "focus-left"
-bind "Alt+Right" "focus-right"
-bind "Alt+Up" "focus-up"
-bind "Alt+Down" "focus-down"
-bind "Ctrl+Alt+Left" "camera-left"
-bind "Ctrl+Alt+Right" "camera-right"
-bind "Ctrl+Alt+Up" "camera-up"
-bind "Ctrl+Alt+Down" "camera-down"
-bind "Alt+Shift+Left" "camera-nudge-left"
-bind "Alt+Shift+Right" "camera-nudge-right"
-bind "Alt+Shift+Up" "camera-nudge-up"
-bind "Alt+Shift+Down" "camera-nudge-down"
-bind "Ctrl+Shift+Left" "move-left"
-bind "Ctrl+Shift+Right" "move-right"
-bind "Ctrl+Shift+Up" "move-up"
-bind "Ctrl+Shift+Down" "move-down"
-bind "Ctrl+Alt+Shift+Left" "resize-left"
-bind "Ctrl+Alt+Shift+Right" "resize-right"
-bind "Ctrl+Alt+Shift+Up" "resize-up"
-bind "Ctrl+Alt+Shift+Down" "resize-down"
+bind "Super+Left" "focus-left"
+bind "Super+Right" "focus-right"
+bind "Super+Up" "focus-up"
+bind "Super+Down" "focus-down"
+bind "Super+H" "focus-left"
+bind "Super+L" "focus-right"
+bind "Super+K" "focus-up"
+bind "Super+J" "focus-down"
+// Absolute Camera zoom presets. Values may be changed within 0.1..=1.0.
+// Super+0 restores the maximum (normal) Camera zoom.
+bind "Super+1" "camera-zoom" 0.1
+bind "Super+2" "camera-zoom" 0.2
+bind "Super+3" "camera-zoom" 0.3
+bind "Super+4" "camera-zoom" 0.4
+bind "Super+5" "camera-zoom" 0.5
+bind "Super+6" "camera-zoom" 0.6
+bind "Super+7" "camera-zoom" 0.7
+bind "Super+8" "camera-zoom" 0.8
+bind "Super+9" "camera-zoom" 0.9
+bind "Super+0" "camera-zoom" 1.0
+bind "Super+Ctrl+Left" "camera-left"
+bind "Super+Ctrl+Right" "camera-right"
+bind "Super+Ctrl+Up" "camera-up"
+bind "Super+Ctrl+Down" "camera-down"
+bind "Super+Ctrl+H" "camera-left"
+bind "Super+Ctrl+L" "camera-right"
+bind "Super+Ctrl+K" "camera-up"
+bind "Super+Ctrl+J" "camera-down"
+bind "Super+Ctrl+Shift+H" "camera-nudge-left"
+bind "Super+Ctrl+Shift+L" "camera-nudge-right"
+bind "Super+Ctrl+Shift+K" "camera-nudge-up"
+bind "Super+Ctrl+Shift+J" "camera-nudge-down"
+bind "Super+Shift+Left" "move-left"
+bind "Super+Shift+Right" "move-right"
+bind "Super+Shift+Up" "move-up"
+bind "Super+Shift+Down" "move-down"
+bind "Super+Ctrl+Shift+Left" "resize-left"
+bind "Super+Ctrl+Shift+Right" "resize-right"
+bind "Super+Ctrl+Shift+Up" "resize-up"
+bind "Super+Ctrl+Shift+Down" "resize-down"
 // The next successfully opened Window consumes one of these directions.
-bind "Ctrl+Alt+Shift+H" "place-next-left"
-bind "Ctrl+Alt+Shift+L" "place-next-right"
-bind "Ctrl+Alt+Shift+K" "place-next-up"
-bind "Ctrl+Alt+Shift+J" "place-next-down"
-bind "Ctrl+Alt+F" "toggle-floating"
-bind "Ctrl+Alt+N" "cycle-output"
-bind "Ctrl+Alt+Enter" "toggle-fullscreen"
-bind "Ctrl+Alt+M" "toggle-maximized"
-bind "Ctrl+Alt+Q" "close"
-bind "Ctrl+Alt+O" "toggle-opacity"
-bind "Ctrl+Alt+B" "toggle-blur"
-bind "Ctrl+Alt+W" "toggle-cursor-wake"
-bind "Ctrl+Alt+Shift+O" "clear-opacity"
-bind "Ctrl+Alt+V" "toggle-overview"
-bind "Ctrl+Alt+S" "select-overview"
-bind "Ctrl+Alt+R" "reload-config"
+bind "Super+Shift+H" "place-next-left"
+bind "Super+Shift+L" "place-next-right"
+bind "Super+Shift+K" "place-next-up"
+bind "Super+Shift+J" "place-next-down"
+bind "Super+F" "toggle-floating"
+bind "Super+N" "cycle-output"
+bind "Super+Enter" "toggle-fullscreen"
+bind "Super+M" "toggle-maximized"
+bind "Super+Z" "toggle-window-size"
+bind "Super+Q" "close"
+bind "Super+O" "toggle-opacity"
+bind "Super+B" "toggle-blur"
+bind "Super+W" "toggle-cursor-wake"
+bind "Super+Shift+O" "clear-opacity"
+bind "Super+V" "toggle-overview"
+bind "Super+S" "select-overview"
+bind "Super+R" "reload-config"
 
 // Rules use an exact app-id match. The property is applied per Window.
 window-rule {
