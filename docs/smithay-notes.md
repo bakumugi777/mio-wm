@@ -48,8 +48,10 @@ prevents idle rendering, and Mio does not swap when Smithay reports no current s
 damage. A future DRM backend may use reliable per-output buffer age normally.
 
 Closing snapshots, cursor wake, surface cursors, drag icons, and the
-configuration-error overlay force full submission while visible and for one cleanup
-frame afterward because they are composed outside `OutputDamageTracker`.
+configuration-error overlay force submission while visible and for one cleanup frame afterward
+because they are composed outside `OutputDamageTracker`. The direct backend represents the
+overlay as solid render elements in its DRM scene; the nested backend draws it into the bound
+framebuffer after the ordinary scene.
 
 The nested winit backend must not request another redraw unconditionally. Mio wakes it
 from a calloop channel on Wayland surface commits, requests immediately after host

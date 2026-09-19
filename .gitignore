@@ -5,6 +5,7 @@
 .agents/
 .codex/
 memo/
+contrib/
 AGENTS.md/
 /core
 /core.*

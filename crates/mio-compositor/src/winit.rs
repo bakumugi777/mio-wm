@@ -975,7 +975,11 @@ where
     )?;
     for rectangle in bitmap_text_rects("CONFIG ERROR - USING DEFAULTS", (14, 8), 2)
         .into_iter()
-        .chain(bitmap_text_rects("FIX FILE, THEN CTRL+ALT+R", (14, 28), 2))
+        .chain(bitmap_text_rects(
+            "FIX FILE, THEN RELOAD CONFIG",
+            (14, 28),
+            2,
+        ))
         .chain(bitmap_text_rects(
             &config_error_summary(
                 error,
@@ -995,7 +999,7 @@ where
     frame.finish().map(drop)
 }
 
-fn bitmap_text_rects(
+pub(crate) fn bitmap_text_rects(
     text: &str,
     origin: (i32, i32),
     scale: i32,
@@ -1160,7 +1164,7 @@ fn glyph_rows(character: char) -> [u8; 7] {
     }
 }
 
-fn config_error_summary(error: &str, max_chars: usize) -> String {
+pub(crate) fn config_error_summary(error: &str, max_chars: usize) -> String {
     let detail = error.split_once(": ").map_or(error, |(_, detail)| detail);
     detail
         .chars()

@@ -215,8 +215,8 @@ introducing interaction latency.
 Config Rules
 match exact app-id and title metadata. Runtime operations use shared Actions and remain
 in memory rather than rewriting handwritten KDL.
-Configuration load/reload errors are likewise adapter state. The nested renderer draws
-a temporary recovery banner above normal content and removes it after a successful
+Configuration load/reload errors are likewise adapter state. Both the nested and direct
+renderers draw a temporary recovery banner above normal content and remove it after a successful
 reload; it is suppressed while the session is locked and never enters Mio Core.
 The optional startup `--command` is an external client convenience, not part of Mio's
 lifetime. A spawn failure is logged while the compositor continues accepting other

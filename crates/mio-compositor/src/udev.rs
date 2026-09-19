@@ -33,6 +33,7 @@ use smithay::{
         renderer::{
             element::{
                 memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
+                solid::SolidColorRenderElement,
                 surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
                 texture::TextureRenderElement,
                 AsRenderElements, Id, Kind,
@@ -99,6 +100,7 @@ smithay::render_elements! {
     Space=smithay::desktop::space::SpaceRenderElements<GlesRenderer, <RenderWindow as smithay::backend::renderer::element::AsRenderElements<GlesRenderer>>::RenderElement>,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Memory=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Solid=SolidColorRenderElement,
     Closing=RoundedElement<TextureRenderElement<GlesTexture>>,
     ClosingTexture=TextureRenderElement<GlesTexture>,
     CursorWake=CursorWakeElement,
@@ -1186,6 +1188,11 @@ impl DirectBackend {
         let mut elements: Vec<DirectRenderElement> = Vec::new();
         self.append_cursor_elements(state, now, &mut elements);
         let cursor_element_count = elements.len();
+        if let (Some(config_error), Some(mode)) =
+            (state.config_error.as_deref(), output.current_mode())
+        {
+            elements.extend(config_error_overlay_elements(mode.size, config_error));
+        }
         let layer_split_valid = upper_layer_element_count <= space_elements.len();
         let remaining_space_elements = if layer_split_valid {
             space_elements.split_off(upper_layer_element_count)
@@ -1291,7 +1298,11 @@ impl DirectBackend {
         if let Some(assigned) = cursor_plane_assignment {
             self.record_cursor_plane_assignment(assigned);
         }
-        if animations_active || !self.closing_visuals.is_empty() || cursor_wake_rendered {
+        if animations_active
+            || !self.closing_visuals.is_empty()
+            || cursor_wake_rendered
+            || state.config_error.is_some()
+        {
             self.repaint_scheduled = true;
         }
         let cpu = render_started.elapsed();
@@ -1529,14 +1540,76 @@ impl DirectBackend {
     }
 }
 
+fn config_error_overlay_elements(
+    size: smithay::utils::Size<i32, Physical>,
+    error: &str,
+) -> Vec<DirectRenderElement> {
+    use smithay::backend::renderer::{
+        element::solid::SolidColorRenderElement, utils::CommitCounter,
+    };
+
+    let height = size.h.clamp(1, 72);
+    let background = Rectangle::new((0, 0).into(), (size.w, height).into());
+    let accent = Rectangle::new((0, 0).into(), (6.min(size.w), height).into());
+    let commit = CommitCounter::from(1usize);
+    let mut elements = crate::winit::bitmap_text_rects("CONFIG ERROR - USING DEFAULTS", (14, 8), 2)
+        .into_iter()
+        .chain(crate::winit::bitmap_text_rects(
+            "FIX FILE, THEN RELOAD CONFIG",
+            (14, 28),
+            2,
+        ))
+        .chain(crate::winit::bitmap_text_rects(
+            &crate::winit::config_error_summary(
+                error,
+                usize::try_from((size.w - 28).max(0) / 12).unwrap_or(0),
+            ),
+            (14, 48),
+            2,
+        ))
+        .filter(|rectangle| rectangle.loc.x < size.w && rectangle.loc.y < height)
+        .map(|rectangle| {
+            SolidColorRenderElement::new(
+                Id::new(),
+                rectangle,
+                commit,
+                [1.0, 0.96, 0.92, 1.0],
+                Kind::Unspecified,
+            )
+            .into()
+        })
+        .collect::<Vec<_>>();
+    elements.push(
+        SolidColorRenderElement::new(
+            Id::new(),
+            accent,
+            commit,
+            [1.0, 0.72, 0.18, 1.0],
+            Kind::Unspecified,
+        )
+        .into(),
+    );
+    elements.push(
+        SolidColorRenderElement::new(
+            Id::new(),
+            background,
+            commit,
+            [0.45, 0.03, 0.04, 0.96],
+            Kind::Unspecified,
+        )
+        .into(),
+    );
+    elements
+}
+
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
     use std::time::Duration;
 
     use super::{
-        classify_hotplug, closing_visual_progress, direct_scene, DirectScene, HotplugAction,
-        HotplugEventKind,
+        classify_hotplug, closing_visual_progress, config_error_overlay_elements, direct_scene,
+        DirectScene, HotplugAction, HotplugEventKind,
     };
 
     #[test]
@@ -1585,5 +1658,14 @@ mod tests {
     fn session_lock_excludes_the_desktop_scene() {
         assert_eq!(direct_scene(false), DirectScene::Desktop);
         assert_eq!(direct_scene(true), DirectScene::SessionLock);
+    }
+
+    #[test]
+    fn configuration_errors_create_a_direct_backend_overlay() {
+        let elements = config_error_overlay_elements(
+            smithay::utils::Size::from((1920, 1080)),
+            "unsupported key Space at line 130",
+        );
+        assert!(elements.len() > 2);
     }
 }

@@ -65,6 +65,4 @@ RUST_LOG=info,mio_compositor::diagnostics=debug \
 cargo run -p mio-compositor -- --config config/mio.kdl --command foot
 ```
 
-問題報告では、起動command、backend、再現操作、関係するlog行をまとめる。長時間監視には
-`contrib/mio-long-run-monitor`を利用できる。
-
+問題報告では、起動command、backend、再現操作、関係するlog行をまとめる。

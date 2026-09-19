@@ -228,15 +228,11 @@ Xwayland satelliteの回収とIPC socketの削除を含む通常の終了処理�
 Mio外から操作する場合は、ログに出る`Mio IPC ready`のパスを`--socket PATH`で指定します。
 IPCソケットには所有ユーザーだけがアクセスできます。
 
-## Kaname連携例
+## 外部ツールとの連携
 
-[contrib/kaname/mio-kaname-windows](contrib/kaname/mio-kaname-windows)は、Mioの`state`
-スナップショットをKanameのprovider用JSON Linesへ変換する例です。
-[contrib/kaname/menu-item.json](contrib/kaname/menu-item.json)をKanameのメニューへ追加すると、
-選択した項目に対して通常の`mioctl focus ID`経路が使われます。
-
-これはKaname専用APIではなく、MioのIPCを利用する外部アダプターの一例です。Mio、Shirube、
-Kanameは互いを必須依存にしません。
+外部ツールはMioの`state`スナップショットを取得し、選択したWindowに対して
+`mioctl focus ID`などの通常のAction経路を利用できます。これは特定ツール専用のAPIではなく、
+Mio、Shirube、Kanameは互いを必須依存にしません。
 
 ## 実験的な仮想Output
 
@@ -289,23 +285,6 @@ cargo test -p mio-core
 WINIT_UNIX_BACKEND=wayland \
 RUST_LOG=info,mio_compositor::diagnostics=debug \
 cargo run -p mio-compositor -- --config config/mio.kdl --command foot
-```
-
-長時間運用時のメモリ、thread、file descriptor数を記録する場合は、別のTTYから次を実行します。
-監視は既に起動している最新の`mio-compositor`を自動検出し、既定では60秒間隔で
-`/tmp/mio-long-run.tsv`へ追記します。compositor本体の挙動には影響しません。
-
-```sh
-contrib/mio-long-run-monitor
-```
-
-対象PID、間隔、保存先を明示することもできます。
-
-```sh
-contrib/mio-long-run-monitor \
-  --pid 12345 \
-  --interval 30 \
-  --output /tmp/mio-long-run.tsv
 ```
 
 ## 設計資料
