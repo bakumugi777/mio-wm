@@ -2,9 +2,6 @@
 // Optional generated configuration. A missing include is ignored.
 // include "wallpaper.kdl"
 // Commands are executed once when Mio starts. Each quoted value is one argv item.
-// Export Mio's display. On the direct backend, reconnect persistent portal services
-// to this socket without disturbing the compositor which hosts a nested Mio.
-spawn-at-startup "sh" "-c" "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE && if [ \"$MIO_BACKEND\" = udev ]; then systemctl --user daemon-reload && systemctl --user restart xdg-desktop-portal-wlr.service && systemctl --user restart xdg-desktop-portal.service; fi"
 spawn-at-startup "waybar"
 // spawn-at-startup "kaname" "--applications"
 

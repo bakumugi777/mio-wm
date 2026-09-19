@@ -152,6 +152,12 @@ fn run() -> MainResult {
         }
     }
 
+    if options.backend == BackendKind::Udev {
+        if let Some(helper) = std::env::var_os("MIO_SESSION_HELPER") {
+            data.state.queue_startup_command(vec![helper]);
+        }
+    }
+
     let startup_commands = data.state.config.config().startup_commands.clone();
     for command in startup_commands {
         data.state

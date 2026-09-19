@@ -44,6 +44,8 @@ system flakeの`inputs`へMioを追加する。
 ```
 
 `programs.mio.enable`はMio package、Wayland session、画面共有用portalを導入する。
+session起動処理はMioのWayland socketが準備できた後にDBus環境とportalを自動更新するため、
+ユーザーのKDLへportal用commandを書く必要はない。
 標準設定を試せるよう、既定ではFoot、Waybar、Wofiも導入する。不要なら
 `programs.mio.recommendedPackages = false;`にする。X11互換が不要なら
 `programs.mio.xwayland.enable = false;`にする。

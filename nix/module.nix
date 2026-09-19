@@ -12,6 +12,17 @@ let
     ]
     ++ cfg.extraSessionArguments;
   escapedSessionArguments = lib.escapeShellArgs sessionArguments;
+  sessionHelper = pkgs.writeShellScript "mio-session-helper" (''
+    ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
+      WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+  '' + lib.optionalString cfg.portal.enable ''
+    ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal-wlr.service
+    ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal.service
+  '');
+  sessionLauncher = pkgs.writeShellScript "mio-session" ''
+    export MIO_SESSION_HELPER=${lib.escapeShellArg sessionHelper}
+    exec ${lib.getExe cfg.package} ${escapedSessionArguments}
+  '';
   sessionPackage = pkgs.runCommand "mio-wayland-session" {
     passthru.providedSessions = [ "mio" ];
   } ''
@@ -19,7 +30,7 @@ let
     [Desktop Entry]
     Name=Mio
     Comment=The Mio Wayland compositor
-    Exec=${lib.getExe cfg.package} ${escapedSessionArguments}
+    Exec=${sessionLauncher}
     Type=Application
     DesktopNames=mio
     EOF
@@ -82,6 +93,16 @@ in
         pkgs.xdg-desktop-portal-gtk
         pkgs.xdg-desktop-portal-wlr
       ];
+    };
+
+    # NixOS' portal broker normally requires graphical-session.target. Mio keeps
+    # application startup explicit, so permit only the broker to run without
+    # activating the entire desktop autostart target.
+    environment.etc = lib.mkIf cfg.portal.enable {
+      "systemd/user/xdg-desktop-portal.service.d/mio.conf".text = ''
+        [Unit]
+        Requisite=
+      '';
     };
   };
 }

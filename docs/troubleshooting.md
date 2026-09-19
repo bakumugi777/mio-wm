@@ -39,10 +39,10 @@ Compositorを強制終了するとWayland socketが閉じるため、footやGTK 
 
 - `xdg-desktop-portal`と`xdg-desktop-portal-wlr`が導入済みか確認する
 - OS設定を変更した場合はuser serviceまたはsessionを再起動する
-- direct backendではKDL例の環境export・portal再接続commandが有効か確認する
-- `systemctl --user is-active graphical-session.target`が`active`か確認する。inactiveの場合、
-  `xdg-desktop-portal.service`は`Requisite`条件によって起動できない。NixOSの非systemd-awareな
-  sessionでは`nixos-fake-graphical-session.target`をsession開始後に起動する
+- NixOS module経由のsessionでは、Mioが出力準備後にDBus環境を更新し、portalをMioの
+  Wayland socketへ再接続する。KDLへportal起動commandを追加する必要はない
+- `systemctl --user status xdg-desktop-portal.service xdg-desktop-portal-wlr.service`で、
+  両方がMioへのログイン後にactiveになっているか確認する
 - OBSの古いsourceを削除し、新しい「スクリーンキャプチャ」を作る
 
 Mioは標準`ext-image-copy-capture-v1`を優先し、legacy `wlr-screencopy`も互換用に公開する。
