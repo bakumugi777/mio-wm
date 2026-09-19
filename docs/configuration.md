@@ -112,8 +112,26 @@ button名は`"left"`、`"right"`、`"middle"`を使う。2 buttonの項目は、
 
 ## Keybind
 
-chordは`Ctrl`、`Alt`、`Shift`、`Super`とkeyを`+`で連結する。keyは矢印、
-`Enter`、英数字1文字に対応する。同じchordを重複して宣言できない。
+chordは`Ctrl`、`Alt`、`Shift`、`Super`とkeyを`+`で連結する。同じchordを重複して
+宣言できない。keyには1文字、またはxkbcommonのkeysym名を指定できる。
+
+代表例：
+
+- `Space`、`Enter`、`Tab`、`Escape`、`BackSpace`
+- `Left`、`Right`、`Up`、`Down`、`Home`、`End`、`PageUp`、`PageDown`
+- `Insert`、`Delete`、`PrintScreen`、`Menu`
+- `F1`から`F35`
+- `KP_0`、`KP_Add`などのkeypad key
+- `XF86AudioRaiseVolume`、`XF86AudioMute`、`XF86MonBrightnessUp`などのXF86 key
+
+`Esc`、`SpaceBar`、`PrtSc`、`PgUp`、`PgDn`等の一般的な別名も利用できる。文字keyの
+判定は修飾後の記号ではなくkeymapのbase keysymを使うため、例えば`Shift+1`は`!`ではなく
+`1`として記述する。
+
+```kdl
+bind "Super+Space" "spawn" "wofi" "--show" "drun"
+bind "PrintScreen" "spawn" "grim"
+```
 
 方向Actionの末尾は`left`、`right`、`up`、`down`のいずれかに置き換える。
 

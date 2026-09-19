@@ -381,7 +381,9 @@ impl MioState {
                     if key_state != KeyState::Pressed {
                         return FilterResult::Forward;
                     }
-                    let keysym = handle.modified_sym();
+                    let keysym = handle
+                        .raw_latin_sym_or_raw_current_sym()
+                        .unwrap_or_else(|| handle.modified_sym());
                     if (xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12)
                         .contains(&keysym.raw())
                     {
@@ -2038,14 +2040,7 @@ fn toggled_opacity(opacity: f32, values: [f32; 2]) -> f32 {
 }
 
 fn key_from_keysym(symbol: Keysym) -> Option<Key> {
-    match symbol {
-        Keysym::Left => Some(Key::Left),
-        Keysym::Right => Some(Key::Right),
-        Keysym::Up => Some(Key::Up),
-        Keysym::Down => Some(Key::Down),
-        Keysym::Return => Some(Key::Enter),
-        _ => char::from_u32(symbol.raw()).map(|value| Key::Letter(value.to_ascii_lowercase())),
-    }
+    (symbol.raw() != 0).then(|| crate::config::key_from_keysym_raw(symbol.raw()))
 }
 
 #[cfg(test)]

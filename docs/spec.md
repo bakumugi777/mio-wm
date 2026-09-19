@@ -1039,6 +1039,8 @@ Wayland socketとIPC socketの準備後に一度だけargvを直接spawnし、sh
 では再実行しない。これは外部shellをMio Coreへ取り込む機能ではない。
 keybindからの外部commandも`bind "CHORD" "spawn" "PROGRAM" "ARG"...`として同じadapter側の
 spawn経路を使う。通常Action名との曖昧さを避けるため、program名をAction位置へ直接書かない。
+key chordのkey名はxkbcommonのkeysym名を基本とし、実入力もkeymapのbase keysymへ正規化する。
+これによりSpace、Print、function key、keypad、XF86 keyを個別のMio概念を増やさず扱う。
 
 Yaldraではprimitiveを組み合わせ、behaviorそのものを記述できるようにする。
 

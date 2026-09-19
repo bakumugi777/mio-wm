@@ -9,6 +9,7 @@ use std::{
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
 use mio_core::{Direction, GridSize};
+use xkbcommon::xkb;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
@@ -203,6 +204,7 @@ pub enum Key {
     Down,
     Enter,
     Letter(char),
+    Symbol(u32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1230,16 +1232,66 @@ impl FromStr for KeyChord {
 }
 
 fn parse_key(value: &str) -> Result<Key, ConfigError> {
-    match value.to_ascii_lowercase().as_str() {
+    let lowercase = value.to_ascii_lowercase();
+    match lowercase.as_str() {
         "left" => Ok(Key::Left),
         "right" => Ok(Key::Right),
         "up" => Ok(Key::Up),
         "down" => Ok(Key::Down),
         "enter" | "return" => Ok(Key::Enter),
-        value if value.chars().count() == 1 => {
-            Ok(Key::Letter(value.chars().next().expect("one character")))
+        _ if value.chars().count() == 1 => {
+            let character = value.chars().next().expect("one character");
+            Ok(key_from_keysym_raw(
+                xkb::utf32_to_keysym(character.to_ascii_lowercase() as u32).raw(),
+            ))
         }
-        _ => Err(ConfigError::new(format!("unsupported key `{value}`"))),
+        _ => parse_named_keysym(value),
+    }
+}
+
+fn parse_named_keysym(value: &str) -> Result<Key, ConfigError> {
+    if value.contains('\0') {
+        return Err(ConfigError::new("key name cannot contain NUL"));
+    }
+    let alias = match value.to_ascii_lowercase().as_str() {
+        "esc" => "Escape",
+        "spacebar" => "space",
+        "printscreen" | "prtsc" | "prtscr" => "Print",
+        "pageup" | "pgup" => "Page_Up",
+        "pagedown" | "pgdown" | "pgdn" => "Page_Down",
+        "backspace" => "BackSpace",
+        "capslock" => "Caps_Lock",
+        "numlock" => "Num_Lock",
+        "scrolllock" => "Scroll_Lock",
+        _ => value,
+    };
+    let mut symbol = xkb::keysym_from_name(alias, xkb::KEYSYM_NO_FLAGS);
+    if symbol.raw() == 0 {
+        symbol = xkb::keysym_from_name(alias, xkb::KEYSYM_CASE_INSENSITIVE);
+    }
+    if symbol.raw() == 0 {
+        Err(ConfigError::new(format!("unsupported key `{value}`")))
+    } else {
+        Ok(key_from_keysym_raw(symbol.raw()))
+    }
+}
+
+pub(crate) fn key_from_keysym_raw(raw: u32) -> Key {
+    match raw {
+        value if value == xkb::keysyms::KEY_Left => Key::Left,
+        value if value == xkb::keysyms::KEY_Right => Key::Right,
+        value if value == xkb::keysyms::KEY_Up => Key::Up,
+        value if value == xkb::keysyms::KEY_Down => Key::Down,
+        value if value == xkb::keysyms::KEY_Return => Key::Enter,
+        value => {
+            let unicode = xkb::keysym_to_utf32(xkb::Keysym::new(value));
+            (unicode != 0)
+                .then(|| char::from_u32(unicode))
+                .flatten()
+                .map_or(Key::Symbol(value), |character| {
+                    Key::Letter(character.to_ascii_lowercase())
+                })
+        }
     }
 }
 
@@ -1659,6 +1711,31 @@ mod tests {
         );
         assert!(parse(r#"bind "Super+W" "spawn""#).is_err());
         assert!(parse(r#"bind "Super+Q" "close" "unexpected""#).is_err());
+    }
+
+    #[test]
+    fn parses_named_xkb_keys_and_common_aliases() {
+        let space = KeyChord::from_str("Super+Space").unwrap();
+        assert_eq!(space.key, Key::Letter(' '));
+
+        let print = KeyChord::from_str("PrintScreen").unwrap();
+        assert_eq!(
+            print.key,
+            Key::Symbol(xkb::keysym_from_name("Print", xkb::KEYSYM_NO_FLAGS).raw())
+        );
+
+        for name in [
+            "Escape",
+            "Tab",
+            "Delete",
+            "Home",
+            "PageDown",
+            "F12",
+            "XF86AudioRaiseVolume",
+        ] {
+            assert!(KeyChord::from_str(name).is_ok(), "failed to parse {name}");
+        }
+        assert!(KeyChord::from_str("DefinitelyNotARealKey").is_err());
     }
 
     #[test]

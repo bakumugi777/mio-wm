@@ -142,6 +142,66 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 設定の再読み込みに失敗した場合、直前の有効な設定を維持してエラーを表示します。起動時の
 設定が不正な場合は組み込み既定値で起動し、修正後の再読み込みによって復旧できます。
 
+### 設定ファイルの分割
+
+`include`で別のKDLファイルを記述位置へ読み込めます。相対パスは`include`を書いた
+ファイルのディレクトリを基準に解決され、読み込み先からさらに`include`することもできます。
+
+```kdl
+include "wallpaper.kdl"
+```
+
+指定先が存在しない場合はエラーにせず無視します。壁紙選択ツールなどが任意設定を後から
+生成する用途を想定しています。ただし、存在するファイルが読めない場合、内容が不正な場合、
+または循環参照になった場合は設定エラーになります。
+
+設定再読み込み時にも読み込み先は再評価されますが、`spawn-at-startup`はMio起動時にしか
+実行されません。例えば選択した壁紙プログラムを次回起動時に復元するファイルを分離できます。
+
+```kdl
+// wallpaper.kdl
+spawn-at-startup "mpvpaper" "*" "/path/to/wallpaper.mp4"
+```
+
+### キー割り当て
+
+キーの組み合わせは`Ctrl`、`Alt`、`Shift`、`Super`とキー名を`+`で連結します。
+キーには任意の1文字、またはxkbcommonのkeysym名を指定できます。
+
+```kdl
+bind "Super+Space" "spawn" "wofi" "--show" "drun"
+bind "PrintScreen" "spawn" "grim"
+bind "Super+F12" "close"
+bind "XF86AudioRaiseVolume" "spawn" "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "5%+"
+```
+
+主な対応キーは次のとおりです。
+
+- `Space`、`Enter`、`Tab`、`Escape`、`BackSpace`
+- `Left`、`Right`、`Up`、`Down`、`Home`、`End`、`PageUp`、`PageDown`
+- `Insert`、`Delete`、`PrintScreen`、`Menu`
+- `F1`から`F35`
+- `KP_0`、`KP_Enter`、`KP_Add`などのテンキー
+- `XF86AudioRaiseVolume`、`XF86AudioMute`、`XF86MonBrightnessUp`などのメディアキー
+- xkbcommonが認識するその他のkeysym名
+
+`Esc`、`SpaceBar`、`PrtSc`、`PrtScr`、`PgUp`、`PgDn`などの一般的な別名も利用できます。
+文字キーは修飾後の記号ではなくkeymapの基準キーで判定するため、`Shift+1`は`!`ではなく
+`1`と記述します。これにより、可能な範囲でキーボード配列に依存せず同じ割り当てを使えます。
+
+外部コマンドはシェル文字列ではなく、プログラム名と引数をそれぞれ別のKDL文字列として
+直接渡します。パイプ、リダイレクト、環境変数展開などシェルの機能が必要な場合だけ、
+明示的に`sh -c`または`bash -c`を使用してください。
+
+```kdl
+bind "Super+W" "spawn" "sh" "-c" "my-command | another-command"
+```
+
+`bind`を一つでも記述すると、組み込みキー割り当て一式は設定内の`bind`で置き換わります。
+残したい既定操作もすべて記述してください。同じキーの組み合わせを重複して宣言すると
+設定エラーになります。利用できるActionと全設定項目は
+[設定リファレンス](docs/configuration.md)を参照してください。
+
 ## 基本操作
 
 既定のキー割り当てはSuperを共通の起点とし、機能群ごとにShiftまたはCtrlだけを加えます。
