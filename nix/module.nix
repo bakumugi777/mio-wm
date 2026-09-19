@@ -18,11 +18,17 @@ let
   '' + lib.optionalString cfg.portal.enable ''
     ${pkgs.systemd}/bin/systemctl --user daemon-reload
     ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal-wlr.service
-    ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal.service
+    ${pkgs.systemd}/bin/systemctl --user restart mio-xdg-desktop-portal.service
   '');
   sessionLauncher = pkgs.writeShellScript "mio-session" ''
     export MIO_SESSION_HELPER=${lib.escapeShellArg sessionHelper}
-    exec ${lib.getExe cfg.package} ${escapedSessionArguments}
+    ${lib.optionalString cfg.portal.enable ''
+      cleanup_portal() {
+        ${pkgs.systemd}/bin/systemctl --user stop mio-xdg-desktop-portal.service >/dev/null 2>&1 || true
+      }
+      trap cleanup_portal EXIT
+    ''}
+    ${lib.getExe cfg.package} ${escapedSessionArguments}
   '';
   sessionPackage = pkgs.runCommand "mio-wayland-session" {
     passthru.providedSessions = [ "mio" ];
@@ -96,15 +102,19 @@ in
       ];
     };
 
-    # NixOS' portal broker normally requires graphical-session.target. Mio keeps
-    # application startup explicit, so extend only the upstream broker unit with
-    # a drop-in instead of replacing it or activating the desktop autostart target.
-    systemd.user.units."xdg-desktop-portal.service" = lib.mkIf cfg.portal.enable {
-      overrideStrategy = "asDropin";
-      text = ''
-        [Unit]
-        Requisite=
-      '';
+    # The upstream broker requires graphical-session.target, while Mio keeps
+    # application startup explicit. Use a Mio-scoped broker service rather than
+    # activating the full desktop autostart target or modifying the upstream unit.
+    systemd.user.services.mio-xdg-desktop-portal = lib.mkIf cfg.portal.enable {
+      description = "Portal broker for the Mio session";
+      wants = [ "xdg-desktop-portal-wlr.service" ];
+      after = [ "xdg-desktop-portal-wlr.service" ];
+      serviceConfig = {
+        Type = "dbus";
+        BusName = "org.freedesktop.portal.Desktop";
+        ExecStart = "${pkgs.xdg-desktop-portal}/libexec/xdg-desktop-portal";
+        Slice = "session.slice";
+      };
     };
   };
 }
