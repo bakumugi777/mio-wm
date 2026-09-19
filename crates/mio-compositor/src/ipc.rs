@@ -107,11 +107,16 @@ impl MioState {
     }
 
     fn apply_ipc_action(&mut self, action: Action) -> String {
+        let previous_focus = self.world.focused();
         match self.world.apply(action) {
             Ok(outcome) => {
                 match outcome {
                     ActionOutcome::FocusChanged(Some(id)) => {
-                        self.activate_window_after_focus_change(id, SERIAL_COUNTER.next_serial());
+                        self.activate_window_after_focus_change(
+                            id,
+                            previous_focus,
+                            SERIAL_COUNTER.next_serial(),
+                        );
                     }
                     ActionOutcome::CloseRequested(id) => {
                         self.begin_close_transition(id);

@@ -253,6 +253,11 @@ logic or persist a layout group.
   keeps the `RenderWindow` scale equal to the Camera scale, so Smithay's tracked popup
   and subsurface trees inherit the same transform as the toplevel. Scaling popup
   geometry separately would apply the Camera transform twice and break input origins.
+- `KeyboardHandle::set_focus` is routed through the active Smithay keyboard grab.
+  `PopupKeyboardGrab` ignores attempts to focus a surface outside its popup chain while
+  that grab remains active. Mio verifies `current_focus()` before committing Core
+  Focus, Camera following, stacking, and focus visuals. On rejection it restores both
+  Core Focus and Smithay's pending focus to the actual protocol target.
 - `Window::with_surfaces` and Mio's Window-ID lookup include tracked popup trees.
   Pointer Window-management gestures must still distinguish those popup surfaces:
   in particular, a primary click on a popup near its parent's edge must be forwarded

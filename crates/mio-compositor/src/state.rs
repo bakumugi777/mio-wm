@@ -81,7 +81,7 @@ use smithay::{
         xdg_toplevel_icon::XdgToplevelIconManager,
     },
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     animation::{AnimatedRect, AnimatedValue},
@@ -1189,6 +1189,7 @@ impl MioState {
             id,
             SERIAL_COUNTER.next_serial(),
             CameraFollowPolicy::Always,
+            None,
         );
     }
 
@@ -1428,15 +1429,30 @@ impl MioState {
     }
 
     pub fn activate_window(&mut self, id: WindowId, serial: Serial) {
-        self.activate_window_with_camera_policy(id, serial, CameraFollowPolicy::OnFocusChange);
+        self.activate_window_with_camera_policy(
+            id,
+            serial,
+            CameraFollowPolicy::OnFocusChange,
+            None,
+        );
     }
 
-    pub(crate) fn activate_window_after_focus_change(&mut self, id: WindowId, serial: Serial) {
-        self.activate_window_with_camera_policy(id, serial, CameraFollowPolicy::Always);
+    pub(crate) fn activate_window_after_focus_change(
+        &mut self,
+        id: WindowId,
+        previous_focus: Option<WindowId>,
+        serial: Serial,
+    ) {
+        self.activate_window_with_camera_policy(
+            id,
+            serial,
+            CameraFollowPolicy::Always,
+            previous_focus,
+        );
     }
 
     pub(crate) fn activate_window_without_camera(&mut self, id: WindowId, serial: Serial) {
-        self.activate_window_with_camera_policy(id, serial, CameraFollowPolicy::Never);
+        self.activate_window_with_camera_policy(id, serial, CameraFollowPolicy::Never, None);
     }
 
     fn activate_window_with_camera_policy(
@@ -1444,8 +1460,54 @@ impl MioState {
         id: WindowId,
         serial: Serial,
         camera_policy: CameraFollowPolicy,
+        prior_logical_focus: Option<WindowId>,
     ) {
-        let previous_focus = self.world.focused();
+        let Some(window) = self
+            .managed_window(id)
+            .map(|managed| managed.window.clone())
+        else {
+            return;
+        };
+        let protocol_previous_focus = self
+            .seat
+            .get_keyboard()
+            .and_then(|keyboard| keyboard.current_focus())
+            .and_then(|surface| self.window_id_for_surface(&surface));
+        let previous_focus = protocol_previous_focus
+            .or(prior_logical_focus)
+            .or_else(|| self.world.focused());
+        if let (Some(keyboard), Some(toplevel)) = (self.seat.get_keyboard(), window.toplevel()) {
+            let target = toplevel.wl_surface().clone();
+            keyboard.set_focus(self, Some(target.clone()), serial);
+            let actual = keyboard.current_focus();
+            if actual.as_ref() != Some(&target) {
+                // Popup keyboard grabs intentionally reject focus changes outside
+                // their popup chain. Reset Smithay's pending focus as well as Mio's
+                // logical focus so the glow and key target cannot diverge.
+                keyboard.set_focus(self, actual.clone(), serial);
+                let actual_id = actual
+                    .as_ref()
+                    .and_then(|surface| self.window_id_for_surface(surface));
+                if let Some(actual_id) = actual_id {
+                    if let Err(error) = self.world.apply(mio_core::Action::FocusWindow(actual_id)) {
+                        warn!(%error, "failed to restore Mio focus after protocol focus rejection");
+                    }
+                } else if let Some(previous_focus) = prior_logical_focus {
+                    if let Err(error) = self
+                        .world
+                        .apply(mio_core::Action::FocusWindow(previous_focus))
+                    {
+                        warn!(%error, "failed to restore prior Mio focus after protocol focus rejection");
+                    }
+                }
+                debug!(
+                    requested_window = id.get(),
+                    actual_window = ?actual_id.map(WindowId::get),
+                    "protocol keyboard grab rejected Window focus change"
+                );
+                return;
+            }
+        }
         if let Err(error) = self.world.apply(mio_core::Action::FocusWindow(id)) {
             warn!(%error, "failed to focus Mio window");
             return;
@@ -1458,16 +1520,7 @@ impl MioState {
                 warn!(%error, "failed to reveal focused Window with Camera");
             }
         }
-        let Some(window) = self
-            .managed_window(id)
-            .map(|managed| managed.window.clone())
-        else {
-            return;
-        };
         self.space.raise_element(&window, true);
-        if let (Some(keyboard), Some(toplevel)) = (self.seat.get_keyboard(), window.toplevel()) {
-            keyboard.set_focus(self, Some(toplevel.wl_surface().clone()), serial);
-        }
         for managed in &self.managed_windows {
             if let Some(toplevel) = managed.window.toplevel() {
                 toplevel.send_pending_configure();

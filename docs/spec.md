@@ -1029,9 +1029,16 @@ Yaldra
 
 KDLでは既存のMio behaviorのパラメータを設定する。
 
+設定はtop-levelの`include "PATH"`で別のKDLファイルを記述位置へ合成できる。相対pathは
+記述元ファイルを基準とし、再帰的な読み込みを許すが循環参照はerrorとする。生成予定の任意設定を
+参照できるように、指定先が存在しない場合だけは無視する。存在するファイルの読み取り失敗や
+不正な内容は通常の設定errorとして扱う。
+
 起動時commandはtop-levelの`spawn-at-startup "PROGRAM" "ARG"...`として複数記述する。
 Wayland socketとIPC socketの準備後に一度だけargvを直接spawnし、shellを介さず、設定reload
 では再実行しない。これは外部shellをMio Coreへ取り込む機能ではない。
+keybindからの外部commandも`bind "CHORD" "spawn" "PROGRAM" "ARG"...`として同じadapter側の
+spawn経路を使う。通常Action名との曖昧さを避けるため、program名をAction位置へ直接書かない。
 
 Yaldraではprimitiveを組み合わせ、behaviorそのものを記述できるようにする。
 

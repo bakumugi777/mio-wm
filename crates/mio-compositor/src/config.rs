@@ -4,6 +4,7 @@ use std::{
     fmt, fs,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 
 use kdl::{KdlDocument, KdlNode, KdlValue};
@@ -178,7 +179,7 @@ impl Default for Appearance {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KeyBinding {
     pub chord: KeyChord,
     pub action: ConfigAction,
@@ -204,7 +205,7 @@ pub enum Key {
     Letter(char),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ConfigAction {
     Close,
     Camera(Direction),
@@ -226,6 +227,7 @@ pub enum ConfigAction {
     ToggleOverview,
     SelectOverview,
     ReloadConfig,
+    Spawn(Vec<String>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -309,54 +311,193 @@ fn default_path() -> Option<PathBuf> {
 }
 
 fn parse_file(path: &Path) -> Result<Config, ConfigError> {
-    let source = fs::read_to_string(path)
-        .map_err(|error| ConfigError::new(format!("failed to read {}: {error}", path.display())))?;
-    parse(&source).map_err(|error| {
-        let detail = error.to_string();
-        let hint = (!detail.contains(" at line "))
-            .then(|| error_line_hint(&source, &detail))
-            .flatten()
-            .map_or_else(String::new, |(line, text)| {
-                format!(" at line {line}: `{}`", text.trim())
-            });
-        ConfigError::new(format!("{}: {detail}{hint}", path.display()))
-    })
+    let mut stack = Vec::new();
+    let nodes = load_config_nodes(path, &mut stack)?;
+    parse_nodes(nodes.iter().map(|loaded| {
+        (
+            &loaded.node,
+            Some((
+                loaded.path.as_path(),
+                loaded.line,
+                loaded.text.as_str(),
+                loaded.source.as_ref(),
+            )),
+        )
+    }))
 }
 
-pub fn parse(source: &str) -> Result<Config, ConfigError> {
-    let document = KdlDocument::from_str(source).map_err(|error| {
+#[cfg(test)]
+fn parse(source: &str) -> Result<Config, ConfigError> {
+    let document = parse_document(source, None)?;
+    parse_nodes(document.nodes().iter().map(|node| (node, None)))
+}
+
+#[derive(Debug)]
+struct LoadedNode {
+    node: KdlNode,
+    path: PathBuf,
+    line: usize,
+    text: String,
+    source: Arc<str>,
+}
+
+fn parse_document(source: &str, path: Option<&Path>) -> Result<KdlDocument, ConfigError> {
+    KdlDocument::from_str(source).map_err(|error| {
         let (line, column, text) = source_location(source, error.span.offset());
-        ConfigError::new(format!(
+        let detail = format!(
             "KDL parse error at line {line}, column {column}: {}; `{}`",
             error.kind,
             text.trim()
-        ))
+        );
+        ConfigError::new(path.map_or(detail.clone(), |path| {
+            format!("{}: {detail}", path.display())
+        }))
+    })
+}
+
+fn load_config_nodes(
+    path: &Path,
+    stack: &mut Vec<PathBuf>,
+) -> Result<Vec<LoadedNode>, ConfigError> {
+    let logical = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| {
+                ConfigError::new(format!("failed to resolve current directory: {error}"))
+            })?
+            .join(path)
+    };
+    let canonical = fs::canonicalize(path)
+        .map_err(|error| ConfigError::new(format!("failed to read {}: {error}", path.display())))?;
+    if let Some(index) = stack.iter().position(|entry| entry == &canonical) {
+        let mut cycle = stack[index..]
+            .iter()
+            .map(|entry| entry.display().to_string())
+            .collect::<Vec<_>>();
+        cycle.push(canonical.display().to_string());
+        return Err(ConfigError::new(format!(
+            "configuration include cycle: {}",
+            cycle.join(" -> ")
+        )));
+    }
+    let source = fs::read_to_string(&canonical).map_err(|error| {
+        ConfigError::new(format!("failed to read {}: {error}", canonical.display()))
     })?;
+    let document = parse_document(&source, Some(&logical))?;
+    let source: Arc<str> = source.into();
+    stack.push(canonical.clone());
+    let mut loaded = Vec::new();
+    for node in document.nodes() {
+        let (line, _, text) = source_location(&source, node.span().offset());
+        if node.name().value() == "include" {
+            if node.entries().len() != 1 || node.children().is_some() {
+                return Err(ConfigError::new(format!(
+                    "{}: include expects exactly one path at line {line}: `{}`",
+                    logical.display(),
+                    text.trim()
+                )));
+            }
+            let include = node_string_at(node, 0).map_err(|error| {
+                ConfigError::new(format!(
+                    "{}: {error} at line {line}: `{}`",
+                    logical.display(),
+                    text.trim()
+                ))
+            })?;
+            if include.is_empty() {
+                return Err(ConfigError::new(format!(
+                    "{}: include path cannot be empty at line {line}",
+                    logical.display()
+                )));
+            }
+            let include = PathBuf::from(include);
+            let include = if include.is_absolute() {
+                include
+            } else {
+                logical
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join(include)
+            };
+            match fs::metadata(&include) {
+                Ok(_) => loaded.extend(load_config_nodes(&include, stack)?),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(ConfigError::new(format!(
+                        "failed to inspect included configuration {}: {error}",
+                        include.display()
+                    )))
+                }
+            }
+        } else {
+            loaded.push(LoadedNode {
+                node: node.clone(),
+                path: logical.clone(),
+                line,
+                text: text.trim().to_owned(),
+                source: Arc::clone(&source),
+            });
+        }
+    }
+    stack.pop();
+    Ok(loaded)
+}
+
+fn parse_nodes<'a>(
+    nodes: impl IntoIterator<Item = (&'a KdlNode, Option<(&'a Path, usize, &'a str, &'a str)>)>,
+) -> Result<Config, ConfigError> {
     let mut config = Config::default();
     let mut bindings = Vec::new();
     let mut saw_bind = false;
     let mut edge_commands = Vec::new();
     let mut saw_edge_command = false;
+    let mut sources = Vec::new();
 
-    for node in document.nodes() {
-        match node.name().value() {
-            "appearance" => parse_appearance(node, &mut config.appearance)?,
-            "effects" => parse_effects(node, &mut config.effects)?,
-            "animation" => config.animation_speed = child_number(node, "speed")?,
-            "camera" => config.viewport = child_size(node, "viewport")?,
-            "placement" => config.initial_window_size = child_size(node, "initial-size")?,
-            "mouse" => parse_mouse(node, &mut config.mouse)?,
-            "spawn-at-startup" => config.startup_commands.push(parse_command(node)?),
-            "bind" => {
-                saw_bind = true;
-                bindings.push(parse_binding(node)?);
+    for (node, source) in nodes {
+        if let Some((path, _, _, full_source)) = source {
+            sources.push((path, full_source));
+        }
+        let result = (|| -> Result<(), ConfigError> {
+            match node.name().value() {
+                "appearance" => parse_appearance(node, &mut config.appearance)?,
+                "effects" => parse_effects(node, &mut config.effects)?,
+                "animation" => config.animation_speed = child_number(node, "speed")?,
+                "camera" => config.viewport = child_size(node, "viewport")?,
+                "placement" => config.initial_window_size = child_size(node, "initial-size")?,
+                "mouse" => parse_mouse(node, &mut config.mouse)?,
+                "spawn-at-startup" => config.startup_commands.push(parse_command(node)?),
+                "bind" => {
+                    saw_bind = true;
+                    bindings.push(parse_binding(node)?);
+                }
+                "edge-command" => {
+                    saw_edge_command = true;
+                    edge_commands.push(parse_edge_command(node)?);
+                }
+                "window-rule" => config.window_rules.push(parse_window_rule(node)?),
+                "include" => {
+                    return Err(ConfigError::new(
+                        "include is only available when loading configuration from a file",
+                    ))
+                }
+                name => return Err(ConfigError::new(format!("unknown top-level node `{name}`"))),
             }
-            "edge-command" => {
-                saw_edge_command = true;
-                edge_commands.push(parse_edge_command(node)?);
-            }
-            "window-rule" => config.window_rules.push(parse_window_rule(node)?),
-            name => return Err(ConfigError::new(format!("unknown top-level node `{name}`"))),
+            Ok(())
+        })();
+        if let Err(error) = result {
+            return Err(match source {
+                Some((path, node_line, node_text, source)) => {
+                    let (line, text) = error_line_hint(source, &error.to_string())
+                        .unwrap_or((node_line, node_text));
+                    ConfigError::new(format!(
+                        "{}: {error} at line {line}: `{}`",
+                        path.display(),
+                        text.trim()
+                    ))
+                }
+                None => error,
+            });
         }
     }
     if saw_bind {
@@ -383,7 +524,18 @@ pub fn parse(source: &str) -> Result<Config, ConfigError> {
             )));
         }
     }
-    validate(&config)?;
+    if let Err(error) = validate(&config) {
+        if let Some((path, line, text)) = sources.iter().rev().find_map(|(path, source)| {
+            error_line_hint(source, &error.to_string()).map(|(line, text)| (*path, line, text))
+        }) {
+            return Err(ConfigError::new(format!(
+                "{}: {error} at line {line}: `{}`",
+                path.display(),
+                text.trim()
+            )));
+        }
+        return Err(error);
+    }
     Ok(config)
 }
 
@@ -522,13 +674,17 @@ fn parse_edge_command(node: &KdlNode) -> Result<EdgeCommand, ConfigError> {
 }
 
 fn parse_command(node: &KdlNode) -> Result<Vec<String>, ConfigError> {
-    let argv = (0..node.entries().len())
+    parse_argv(node, 0, "spawn-at-startup")
+}
+
+fn parse_argv(node: &KdlNode, start: usize, context: &str) -> Result<Vec<String>, ConfigError> {
+    let argv = (start..node.entries().len())
         .map(|index| node_string_at(node, index).map(str::to_owned))
         .collect::<Result<Vec<_>, _>>()?;
     if argv.first().is_none_or(String::is_empty) {
-        return Err(ConfigError::new(
-            "spawn-at-startup expects a non-empty executable",
-        ));
+        return Err(ConfigError::new(format!(
+            "{context} expects a non-empty executable"
+        )));
     }
     Ok(argv)
 }
@@ -691,6 +847,11 @@ fn parse_binding(node: &KdlNode) -> Result<KeyBinding, ConfigError> {
     let chord = KeyChord::from_str(node_string_at(node, 0)?)?;
     let action_name = node_string_at(node, 1)?;
     let action = if action_name == "camera-zoom" {
+        if node.entries().len() != 3 {
+            return Err(ConfigError::new(
+                "camera-zoom bind expects exactly one zoom value",
+            ));
+        }
         let zoom = node_number_at(node, 2)?;
         if !(0.1..=1.0).contains(&zoom) {
             return Err(ConfigError::new(
@@ -698,7 +859,14 @@ fn parse_binding(node: &KdlNode) -> Result<KeyBinding, ConfigError> {
             ));
         }
         ConfigAction::CameraZoom(zoom)
+    } else if action_name == "spawn" {
+        ConfigAction::Spawn(parse_argv(node, 2, "spawn bind")?)
     } else {
+        if node.entries().len() != 2 {
+            return Err(ConfigError::new(format!(
+                "{action_name} bind does not accept additional arguments"
+            )));
+        }
         parse_action(action_name)?
     };
     Ok(KeyBinding { chord, action })
@@ -1218,7 +1386,19 @@ impl Error for ConfigError {}
 #[cfg(test)]
 #[allow(clippy::float_cmp, clippy::too_many_lines)]
 mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     use super::*;
+
+    static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    fn test_directory(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "mio-{name}-{}-{}",
+            std::process::id(),
+            NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
 
     #[test]
     fn defaults_new_windows_to_the_full_viewport() {
@@ -1467,6 +1647,110 @@ mod tests {
         assert!(parse("bind \"Super+1\" \"camera-zoom\" 0.09").is_err());
         assert!(parse("bind \"Super+0\" \"camera-zoom\" 1.01").is_err());
         assert!(parse("bind \"Super+5\" \"camera-zoom\"").is_err());
+        assert!(parse("bind \"Super+5\" \"camera-zoom\" 0.5 0.6").is_err());
+    }
+
+    #[test]
+    fn parses_external_command_binding_as_argv() {
+        let config = parse(r#"bind "Super+W" "spawn" "bash" "-c" "do something""#).unwrap();
+        assert_eq!(
+            config.bindings[0].action,
+            ConfigAction::Spawn(vec!["bash".into(), "-c".into(), "do something".into()])
+        );
+        assert!(parse(r#"bind "Super+W" "spawn""#).is_err());
+        assert!(parse(r#"bind "Super+Q" "close" "unexpected""#).is_err());
+    }
+
+    #[test]
+    fn loads_relative_includes_in_place_and_ignores_missing_files() {
+        let directory = test_directory("config-include");
+        fs::create_dir_all(&directory).unwrap();
+        let main = directory.join("config.kdl");
+        let wallpaper = directory.join("wallpaper.kdl");
+        fs::write(
+            &main,
+            "appearance {\n opacity 0.7\n}\ninclude \"missing.kdl\"\ninclude \"wallpaper.kdl\"\nappearance {\n opacity 0.9\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            &wallpaper,
+            "spawn-at-startup \"mpvpaper\" \"*\" \"wallpaper.mp4\"\nappearance {\n opacity 0.8\n}\n",
+        )
+        .unwrap();
+
+        let config = parse_file(&main).unwrap();
+        assert_eq!(
+            config.startup_commands,
+            [vec![
+                "mpvpaper".to_owned(),
+                "*".to_owned(),
+                "wallpaper.mp4".to_owned()
+            ]]
+        );
+        assert!((config.appearance.opacity - 0.9).abs() < f32::EPSILON);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_relative_includes_next_to_a_symlinked_main_config() {
+        use std::os::unix::fs::symlink;
+
+        let directory = test_directory("config-symlink-include");
+        let store = directory.join("store");
+        let visible = directory.join("visible");
+        fs::create_dir_all(&store).unwrap();
+        fs::create_dir_all(&visible).unwrap();
+        let stored_main = store.join("config.kdl");
+        let visible_main = visible.join("config.kdl");
+        fs::write(&stored_main, "include \"wallpaper.kdl\"\n").unwrap();
+        fs::write(
+            visible.join("wallpaper.kdl"),
+            "spawn-at-startup \"awww-daemon\"\n",
+        )
+        .unwrap();
+        symlink(&stored_main, &visible_main).unwrap();
+
+        let config = parse_file(&visible_main).unwrap();
+        assert_eq!(config.startup_commands, [vec!["awww-daemon".to_owned()]]);
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reports_included_file_errors_and_include_cycles() {
+        let directory = test_directory("config-include-errors");
+        fs::create_dir_all(&directory).unwrap();
+        let main = directory.join("config.kdl");
+        let child = directory.join("child.kdl");
+        fs::write(&main, "include \"child.kdl\"\n").unwrap();
+        fs::write(&child, "appearance {\n opacity 4.0\n}\n").unwrap();
+
+        let error = parse_file(&main).unwrap_err().to_string();
+        assert!(error.contains(&child.display().to_string()));
+        assert!(error.contains("line 2"));
+        assert!(error.contains("opacity 4.0"));
+
+        fs::write(&child, "include \"config.kdl\"\n").unwrap();
+        let error = parse_file(&main).unwrap_err().to_string();
+        assert!(error.contains("configuration include cycle"));
+        assert!(error.contains(&main.display().to_string()));
+        assert!(error.contains(&child.display().to_string()));
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn include_requires_a_file_context_and_one_string_path() {
+        assert!(parse("include \"wallpaper.kdl\"").is_err());
+
+        let directory = test_directory("config-invalid-include");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("config.kdl");
+        fs::write(&path, "include \"one.kdl\" \"two.kdl\"\n").unwrap();
+        assert!(parse_file(&path).is_err());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -1494,8 +1778,7 @@ mod tests {
 
     #[test]
     fn failed_reload_keeps_last_valid_configuration() {
-        let directory =
-            std::env::temp_dir().join(format!("mio-config-test-{}", std::process::id()));
+        let directory = test_directory("config-reload");
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("config.kdl");
         fs::write(&path, "appearance {\n opacity 0.7\n}").unwrap();
@@ -1503,14 +1786,12 @@ mod tests {
         fs::write(&path, "appearance {\n opacity 4.0\n}").unwrap();
         assert!(manager.reload().is_err());
         assert!((manager.config().appearance.opacity - 0.7).abs() < f32::EPSILON);
-        let _ = fs::remove_file(path);
-        let _ = fs::remove_dir(directory);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn failed_startup_load_uses_defaults_and_retains_path_for_reload() {
-        let directory =
-            std::env::temp_dir().join(format!("mio-config-fallback-test-{}", std::process::id()));
+        let directory = test_directory("config-fallback");
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("config.kdl");
         fs::write(&path, "appearance {\n opacity 4.0\n}").unwrap();
@@ -1525,7 +1806,6 @@ mod tests {
         fs::write(&path, "appearance {\n opacity 0.7\n}").unwrap();
         manager.reload().unwrap();
         assert!((manager.config().appearance.opacity - 0.7).abs() < f32::EPSILON);
-        let _ = fs::remove_file(path);
-        let _ = fs::remove_dir(directory);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

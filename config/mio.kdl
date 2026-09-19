@@ -1,4 +1,6 @@
 // Mio configuration example.
+// Optional generated configuration. A missing include is ignored.
+// include "wallpaper.kdl"
 // Commands are executed once when Mio starts. Each quoted value is one argv item.
 // Export Mio's display. On the direct backend, reconnect persistent portal services
 // to this socket without disturbing the compositor which hosts a nested Mio.

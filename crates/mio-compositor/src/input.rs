@@ -401,7 +401,7 @@ impl MioState {
                     let shortcut = bindings
                         .iter()
                         .find(|binding| binding.chord == chord)
-                        .map(|binding| binding.action);
+                        .map(|binding| binding.action.clone());
                     shortcut.map_or(FilterResult::Forward, |action| {
                         FilterResult::Intercept(KeyboardAction::Config(action))
                     })
@@ -566,7 +566,7 @@ impl MioState {
                 if let Ok(ActionOutcome::FocusChanged(Some(id))) =
                     self.world.apply(Action::Focus(direction))
                 {
-                    self.activate_window_after_focus_change(id, serial);
+                    self.activate_window_after_focus_change(id, focused, serial);
                 }
             }
             ConfigAction::ToggleFullscreen => self.toggle_focused_presentation(true),
@@ -614,6 +614,7 @@ impl MioState {
                     );
                 }
             },
+            ConfigAction::Spawn(argv) => self.spawn_command(&argv),
         }
     }
 
@@ -1649,10 +1650,15 @@ impl MioState {
                 amount(Axis::Horizontal),
                 amount(Axis::Vertical),
             ) {
+                let previous_focus = self.world.focused();
                 if let Ok(ActionOutcome::FocusChanged(Some(id))) =
                     self.world.apply(Action::Focus(direction))
                 {
-                    self.activate_window_after_focus_change(id, SERIAL_COUNTER.next_serial());
+                    self.activate_window_after_focus_change(
+                        id,
+                        previous_focus,
+                        SERIAL_COUNTER.next_serial(),
+                    );
                     info!(
                         ?direction,
                         window = id.get(),

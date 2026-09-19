@@ -1298,11 +1298,7 @@ impl DirectBackend {
         if let Some(assigned) = cursor_plane_assignment {
             self.record_cursor_plane_assignment(assigned);
         }
-        if animations_active
-            || !self.closing_visuals.is_empty()
-            || cursor_wake_rendered
-            || state.config_error.is_some()
-        {
+        if animations_active || !self.closing_visuals.is_empty() || cursor_wake_rendered {
             self.repaint_scheduled = true;
         }
         let cpu = render_started.elapsed();

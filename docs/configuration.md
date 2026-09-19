@@ -23,12 +23,40 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 | `camera { viewport W H }` | 通常倍率で画面に入るGrid数 |
 | `placement { initial-size W H }` | 新規Windowの初期Grid size |
 | `mouse { ... }` | Mouse gesture |
+| `include "PATH"` | 別のKDL設定ファイルをその位置へ読み込む |
 | `spawn-at-startup "PROGRAM" "ARG"...` | 起動後に一度だけ実行するargv |
 | `edge-command "EDGE" "PROGRAM" "ARG"...` | Output端の短い右clickで実行するargv |
 | `bind "CHORD" "ACTION"` | keybind |
+| `bind "CHORD" "spawn" "PROGRAM" "ARG"...` | keybindから外部commandを実行 |
 | `window-rule { ... }` | Window Propertyの設定rule |
 
 未知のnodeやoptionはerrorになる。
+
+## Include
+
+`include`は別のKDLファイルを、記述した位置へ展開する。相対pathは`include`を書いた
+ファイルのディレクトリを基準に解決する。読み込み先でも`include`を使用できるが、循環参照は
+errorになる。
+
+```kdl
+include "wallpaper.kdl"
+```
+
+指定先が存在しない場合だけはerrorにせず無視する。これは、壁紙選択ツールなどが後から生成する
+任意設定を安全に読み込むための挙動である。存在するファイルが読めない場合やKDL・設定値が不正な
+場合は通常どおりerrorを表示する。
+
+例えば`wallpaper.kdl`を次のどちらかに更新すれば、次回のMio起動時に選択したbackendを起動できる。
+
+```kdl
+spawn-at-startup "mpvpaper" "*" "/path/to/wallpaper.mp4"
+// または
+spawn-at-startup "awww-daemon"
+spawn-at-startup "awww" "img" "/path/to/wallpaper.png"
+```
+
+設定reloadでも読み込み先は再評価される。ただし`spawn-at-startup`はreload時には実行されないため、
+壁紙commandの変更は次回のMio起動時に反映される。
 
 ## Appearance
 
@@ -116,6 +144,13 @@ chordは`Ctrl`、`Alt`、`Shift`、`Super`とkeyを`+`で連結する。keyは�
 
 ```kdl
 bind "Super+5" "camera-zoom" 0.5
+```
+
+外部commandは`spawn` Actionでargvを直接指定する。shell文字列として解釈しないため、pipeや
+環境変数展開などが必要な場合だけ`sh -c`または`bash -c`を明示する。
+
+```kdl
+bind "Super+W" "spawn" "bash" "-c" "$HOME/.shellscript/select-wallpaper-kaname.sh"
 ```
 
 ## Window Rule
