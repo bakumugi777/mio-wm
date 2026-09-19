@@ -16,6 +16,7 @@ let
     ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
       WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
   '' + lib.optionalString cfg.portal.enable ''
+    ${pkgs.systemd}/bin/systemctl --user daemon-reload
     ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal-wlr.service
     ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal.service
   '');
