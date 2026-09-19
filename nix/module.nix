@@ -96,10 +96,11 @@ in
     };
 
     # NixOS' portal broker normally requires graphical-session.target. Mio keeps
-    # application startup explicit, so permit only the broker to run without
-    # activating the entire desktop autostart target.
-    environment.etc = lib.mkIf cfg.portal.enable {
-      "systemd/user/xdg-desktop-portal.service.d/mio.conf".text = ''
+    # application startup explicit, so extend only the upstream broker unit with
+    # a drop-in instead of replacing it or activating the desktop autostart target.
+    systemd.user.units."xdg-desktop-portal.service" = lib.mkIf cfg.portal.enable {
+      overrideStrategy = "asDropin";
+      text = ''
         [Unit]
         Requisite=
       '';

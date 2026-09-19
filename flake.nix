@@ -58,6 +58,7 @@
           nixos-module = pkgs.runCommand "mio-nixos-module-check" { } ''
             test "${builtins.head sessionPackage.providedSessions}" = mio
             test "${testSystem.config.xdg.portal.config.mio."org.freedesktop.impl.portal.ScreenCast"}" = wlr
+            test "${testSystem.config.systemd.user.units."xdg-desktop-portal.service".overrideStrategy}" = asDropin
             touch $out
           '';
         });
