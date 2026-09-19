@@ -40,19 +40,74 @@ impl AnimatedValue {
 
 #[derive(Clone, Copy, Debug)]
 pub struct AnimatedRect {
-    x: AnimatedValue,
-    y: AnimatedValue,
-    width: AnimatedValue,
-    height: AnimatedValue,
+    x: InertialValue,
+    y: InertialValue,
+    width: InertialValue,
+    height: InertialValue,
+}
+
+/// Critically damped presentation motion.
+///
+/// Unlike the exponential interpolation used for opacity and protocol sizes,
+/// this starts from rest, gains speed, and then settles without oscillating.
+/// Retargeting preserves velocity so repeated Camera input remains continuous.
+#[derive(Clone, Copy, Debug)]
+struct InertialValue {
+    current: f64,
+    target: f64,
+    velocity: f64,
+}
+
+impl InertialValue {
+    const fn new(value: f64) -> Self {
+        Self {
+            current: value,
+            target: value,
+            velocity: 0.0,
+        }
+    }
+
+    fn set_target(&mut self, target: f64) {
+        self.target = target;
+    }
+
+    fn advance(&mut self, seconds: f64, speed: f64) -> bool {
+        if speed == 0.0 {
+            self.current = self.target;
+            self.velocity = 0.0;
+            return false;
+        }
+
+        // An exact critically damped spring step. A stationary value therefore
+        // has zero initial velocity, while an in-flight retarget keeps inertia.
+        let omega = 12.0 * speed;
+        let displacement = self.current - self.target;
+        let decay = (-omega * seconds).exp();
+        let impulse = (self.velocity + omega * displacement) * seconds;
+        self.current = self.target + (displacement + impulse) * decay;
+        self.velocity = (self.velocity - omega * impulse) * decay;
+
+        if (self.target - self.current).abs() < 0.05 && self.velocity.abs() < 0.5 {
+            self.current = self.target;
+            self.velocity = 0.0;
+            false
+        } else {
+            true
+        }
+    }
+
+    const fn current(self) -> f64 {
+        self.current
+    }
 }
 
 impl AnimatedRect {
     pub fn new(rect: ScreenRect) -> Self {
         Self {
-            x: AnimatedValue::new(f64::from(rect.x)),
-            y: AnimatedValue::new(f64::from(rect.y)),
-            width: AnimatedValue::new(f64::from(rect.width)),
-            height: AnimatedValue::new(f64::from(rect.height)),
+            x: InertialValue::new(f64::from(rect.x)),
+            y: InertialValue::new(f64::from(rect.y)),
+            width: InertialValue::new(f64::from(rect.width)),
+            height: InertialValue::new(f64::from(rect.height)),
         }
     }
 
@@ -114,6 +169,41 @@ mod tests {
             value.advance(1.0 / 60.0, 1.0);
         }
         assert!((value.current() - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn inertial_motion_accelerates_then_decelerates() {
+        let mut value = InertialValue::new(0.0);
+        value.set_target(100.0);
+        let mut frame_distances = Vec::new();
+        let mut previous = value.current;
+        for _ in 0..90 {
+            value.advance(1.0 / 60.0, 1.0);
+            frame_distances.push(value.current - previous);
+            previous = value.current;
+        }
+
+        let peak = frame_distances
+            .iter()
+            .copied()
+            .fold(0.0_f64, f64::max);
+        assert!(frame_distances[0] < peak);
+        assert!(frame_distances[30] < peak);
+        assert!((value.current - 100.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn inertial_retarget_preserves_motion() {
+        let mut value = InertialValue::new(0.0);
+        value.set_target(100.0);
+        for _ in 0..8 {
+            value.advance(1.0 / 60.0, 1.0);
+        }
+        let velocity = value.velocity;
+        value.set_target(140.0);
+        value.advance(1.0 / 60.0, 1.0);
+        assert!(velocity > 0.0);
+        assert!(value.velocity > 0.0);
     }
 
     #[test]

@@ -569,6 +569,8 @@ capture用sceneはpointer overlayを含めず、`overlay_cursor`による追加�
 # 14. Logical State と Render State
 
 CameraおよびWindowの論理状態と、アニメーション中の描画状態を分離する。
+Windowの吸着、Camera移動、Camera zoomには速度を保持する臨界減衰型の描画補間を使う。
+開始直後と終点付近を遅くし、途中で目標が変わった場合も現在速度を維持する。
 
 例：
 
