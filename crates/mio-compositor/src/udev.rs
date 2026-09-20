@@ -61,7 +61,7 @@ use smithay::{
         input::Libinput,
         rustix::fs::OFlags,
     },
-    utils::{DeviceFd, IsAlive, Logical, Physical, Point, Rectangle, Scale, Transform},
+    utils::{DeviceFd, IsAlive, Logical, Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::compositor::with_states,
     wayland::dmabuf::DmabufFeedbackBuilder,
     wayland::shell::wlr_layer::Layer as WlrLayer,
@@ -234,6 +234,8 @@ struct SoftwareCursor {
 struct SoftwareCursorFrame {
     buffer: MemoryRenderBuffer,
     hotspot: Point<i32, smithay::utils::Logical>,
+    source_size: Size<i32, Logical>,
+    nominal_size: u32,
     delay_ms: u64,
 }
 
@@ -703,6 +705,8 @@ fn software_cursor_frame(image: &xcursor::parser::Image) -> SoftwareCursorFrame 
     SoftwareCursorFrame {
         buffer,
         hotspot: (image.xhot as i32, image.yhot as i32).into(),
+        source_size: (image.width as i32, image.height as i32).into(),
+        nominal_size: image.size.max(1),
         delay_ms: u64::from(image.delay.max(1)),
     }
 }
@@ -731,6 +735,8 @@ fn built_in_cursor() -> SoftwareCursor {
             None,
         ),
         hotspot: (1, 1).into(),
+        source_size: (width as i32, height as i32).into(),
+        nominal_size: width,
         delay_ms: 1,
     };
     SoftwareCursor {
@@ -1423,18 +1429,16 @@ impl DirectBackend {
                     self.repaint_scheduled = true;
                 }
                 let frame = cursor.frame(cursor_elapsed);
-                let location = software_cursor_physical_location(
-                    pointer_location,
-                    frame.hotspot,
-                    output_scale,
-                );
+                let (cursor_size, hotspot) = software_cursor_geometry(frame, self.cursor_size);
+                let location =
+                    software_cursor_physical_location(pointer_location, hotspot, output_scale);
                 match MemoryRenderBufferRenderElement::from_buffer(
                     &mut self.renderer,
                     location.to_f64(),
                     &frame.buffer,
                     None,
                     None,
-                    None,
+                    Some(cursor_size),
                     Kind::Cursor,
                 ) {
                     Ok(cursor) => elements.push(cursor.into()),
@@ -1571,6 +1575,21 @@ impl DirectBackend {
     }
 }
 
+fn software_cursor_geometry(
+    frame: &SoftwareCursorFrame,
+    requested_size: u32,
+) -> (Size<i32, Logical>, Point<i32, Logical>) {
+    let scale = f64::from(requested_size) / f64::from(frame.nominal_size.max(1));
+    let scale_value = |value: i32| (f64::from(value) * scale).round() as i32;
+    (
+        Size::from((
+            scale_value(frame.source_size.w).max(1),
+            scale_value(frame.source_size.h).max(1),
+        )),
+        Point::from((scale_value(frame.hotspot.x), scale_value(frame.hotspot.y))),
+    )
+}
+
 fn software_cursor_physical_location(
     pointer_location: Point<f64, Logical>,
     hotspot: Point<i32, Logical>,
@@ -1641,11 +1660,12 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        classify_hotplug, closing_visual_progress, direct_scene, software_cursor_physical_location,
-        ConfigErrorOverlayState, DirectScene, HotplugAction, HotplugEventKind,
+        classify_hotplug, closing_visual_progress, direct_scene, software_cursor_geometry,
+        software_cursor_physical_location, ConfigErrorOverlayState, DirectScene, Fourcc,
+        HotplugAction, HotplugEventKind, MemoryRenderBuffer, SoftwareCursorFrame, Transform,
     };
     use smithay::backend::renderer::element::Element;
-    use smithay::utils::{Logical, Physical, Point};
+    use smithay::utils::{Logical, Physical, Point, Size};
 
     #[test]
     fn closing_visual_progress_runs_backwards_and_clamps() {
@@ -1735,6 +1755,29 @@ mod tests {
         assert_eq!(
             location + Point::<i32, Physical>::from((5, 9)),
             Point::from((1919, 1079))
+        );
+    }
+
+    #[test]
+    fn software_cursor_geometry_honors_requested_size() {
+        let frame = SoftwareCursorFrame {
+            buffer: MemoryRenderBuffer::from_slice(
+                &[0; 36 * 36 * 4],
+                Fourcc::Argb8888,
+                (36, 36),
+                1,
+                Transform::Normal,
+                None,
+            ),
+            hotspot: Point::from((6, 9)),
+            source_size: Size::from((36, 36)),
+            nominal_size: 36,
+            delay_ms: 1,
+        };
+
+        assert_eq!(
+            software_cursor_geometry(&frame, 24),
+            (Size::from((24, 24)), Point::from((4, 6)))
         );
     }
 }

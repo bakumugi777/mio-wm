@@ -33,6 +33,10 @@ The default Shadow is centered on the Window edge; an explicit nonzero `shadow-o
 expose a strip of the configured background color between the Window and the strongest Shadow.
 `animation.speed` controls the shared
 Camera, Window geometry, zoom, and opacity interpolation; zero disables animation.
+The direct backend reads `XCURSOR_THEME` and `XCURSOR_SIZE` when Mio starts.
+`XCURSOR_SIZE` is a logical-pixel size independent of Output scale; Mio scales the
+nearest image when a theme does not provide that exact size. Restart the Mio session
+after changing either environment variable.
 The example binds `toggle-overview` and `select-overview`; Overview is purely a Camera
 zoom and does not create another Window representation.
 `camera-*` moves by a viewport, while `camera-nudge-*` moves the same Camera by one

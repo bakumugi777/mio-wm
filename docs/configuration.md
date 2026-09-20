@@ -44,6 +44,13 @@ output {
 }
 ```
 
+## Cursor theme and size
+
+Cursor themeと論理sizeはKDLではなく、Mio起動時の`XCURSOR_THEME`と`XCURSOR_SIZE`を使用する。
+たとえば`XCURSOR_SIZE=24`はOutput scaleにかかわらず24 logical pixelを指定する。Mioは
+themeに要求sizeそのものの画像がない場合も、最も近い画像を要求sizeへ拡大縮小する。
+環境変数は起動時に読み込むため、変更後はMio sessionを再起動する必要がある。
+
 ## Include
 
 `include`は別のKDLファイルを、記述した位置へ展開する。相対pathは`include`を書いた
