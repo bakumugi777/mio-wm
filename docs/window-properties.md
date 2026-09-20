@@ -13,6 +13,8 @@ Default < Matched Config Rules < Runtime Override
 
 上位層にそのPropertyの値がなければ、直下の層へ戻る。runtime overrideをclearすると
 一致中のConfig Ruleの値へ戻り、Config RuleにもなければDefaultへ戻る。
+opacityのDefault層は`appearance.opacity`で設定する。これはWindowだけへ適用され、背景や
+layer-shell surfaceを含むscene全体のalphaとしては扱わない。
 
 runtime overrideはWindow ID単位である。同じapp-idの別Windowへ波及せず、手書きのKDLも
 書き換えない。Windowが閉じられると、そのWindowのoverrideも寿命を終える。
@@ -54,4 +56,3 @@ Windowを移す機能ではない。runtimeで`floating=false`を指定すれば
 `reload-config`は新しい設定全体の検証に成功してから置き換える。不正な設定なら直前の有効な
 設定とPropertyを維持する。成功時は既存WindowへRuleを再適用するが、起動時commandは
 再実行しない。
-

@@ -130,6 +130,8 @@ capture protocolを利用できるため、Mioはその範囲をdesktop session�
 
 設定例は[config/mio.kdl](config/mio.kdl)にあります。標準の配置先は次のいずれかです。
 全設定項目とkeybind Action名は[設定リファレンス](docs/configuration.md)にまとめています。
+`appearance.opacity`は全Windowの既定値で、後続の`window-rule`からアプリごとに上書き
+できます。例えば全Windowを半透明にし、`foot`だけを不透明にできます。
 
 ```text
 $XDG_CONFIG_HOME/mio/config.kdl

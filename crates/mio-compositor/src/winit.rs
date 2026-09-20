@@ -364,7 +364,6 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                     animations_active |=
                         state.sync_focus_indicator_contexts(focus_glow_program.as_ref());
                     let appearance = state.config.config().appearance;
-                    let opacity = appearance.opacity;
                     let effects = state.config.config().effects;
                     let cursor_wake_enabled =
                         state.cursor_wake_override.unwrap_or(effects.cursor_wake);
@@ -485,7 +484,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                                     renderer,
                                     [&state.space],
                                     &primary_output,
-                                    opacity,
+                                    1.0,
                                 )
                                 .map_err(
                                     OutputDamageTrackerError::OutputNoMode,

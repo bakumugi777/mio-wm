@@ -82,7 +82,7 @@ spawn-at-startup "awww" "img" "/path/to/wallpaper.png"
 | `focus-indicator-color` | color |
 | `corner-radius` | logical pixel、`0..=4096`。`0`で無効 |
 | `gaps` | logical pixel、`0..=4096` |
-| `opacity` | `0.0..=1.0` |
+| `opacity` | `0.0..=1.0`。全Windowの既定opacity |
 | `opacity-toggle A B` | `toggle-opacity`で切り替える異なる2値 |
 
 ## Effects
@@ -188,6 +188,8 @@ bind "Super+W" "spawn" "bash" "-c" "$HOME/.shellscript/select-wallpaper-kaname.s
 `app-id`と`title`は完全一致であり、少なくとも一方が必要である。Propertyの優先順位は
 Default、matched Window Rule、runtime overrideの順である。複数Ruleが一致すると
 ファイル順に合成され、同じPropertyは後のRuleが上書きする。
+`*`や正規表現は解釈しない。全Windowへopacityを設定する場合は、全件一致Ruleではなく
+`appearance.opacity`を使う。
 
 ```kdl
 window-rule {

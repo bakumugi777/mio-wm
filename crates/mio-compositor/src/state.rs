@@ -10,8 +10,8 @@ use std::{
 };
 
 use mio_core::{
-    Action, Camera, Direction, GridPoint, OutputId, Presentation, WindowId, World, WorldPoint,
-    WorldRect,
+    Action, Camera, Direction, GridPoint, OutputId, Presentation, WindowId, WindowProperty, World,
+    WorldPoint, WorldRect,
 };
 use smithay::{
     backend::{
@@ -1154,6 +1154,13 @@ impl MioState {
             surface.send_close();
             return;
         };
+        let default_opacity = self.config.config().appearance.opacity;
+        if let Err(error) = self
+            .world
+            .replace_config_window_properties(id, &[WindowProperty::Opacity(default_opacity)])
+        {
+            warn!(%error, window = id.get(), "failed to apply default Window opacity");
+        }
         if let Some(window) = self.world.window(id) {
             info!(
                 window = id.get(),

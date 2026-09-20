@@ -337,7 +337,8 @@ impl MioState {
         let Some((app_id, title)) = metadata else {
             return;
         };
-        let properties = matching_window_rule_properties(
+        let properties = configured_window_properties(
+            self.config.config().appearance.opacity,
             &self.config.config().window_rules,
             app_id.as_deref(),
             title.as_deref(),
@@ -557,14 +558,25 @@ fn matching_window_rule_properties(
         .collect()
 }
 
+fn configured_window_properties(
+    default_opacity: f32,
+    rules: &[WindowRule],
+    app_id: Option<&str>,
+    title: Option<&str>,
+) -> Vec<WindowProperty> {
+    std::iter::once(WindowProperty::Opacity(default_opacity))
+        .chain(matching_window_rule_properties(rules, app_id, title))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
 
     use super::{
-        accept_client_presentation_request, dialog_floating_action, dialog_should_float,
-        fixed_size_constraints, matching_window_rule_properties, ping_due, rectangle_overlap_area,
-        PingDue,
+        accept_client_presentation_request, configured_window_properties, dialog_floating_action,
+        dialog_should_float, fixed_size_constraints, matching_window_rule_properties, ping_due,
+        rectangle_overlap_area, PingDue,
     };
     use crate::config::WindowRule;
     use mio_core::{Action, Presentation, WindowId, WindowProperty, WindowPropertyKind};
@@ -660,6 +672,26 @@ mod tests {
         assert_eq!(
             matching_window_rule_properties(&rules, Some("foot"), Some("other")),
             [WindowProperty::Opacity(0.8), WindowProperty::Floating(true),]
+        );
+    }
+
+    #[test]
+    fn configured_default_opacity_is_overridden_by_matching_rule() {
+        let rules = [WindowRule {
+            app_id: Some("foot".into()),
+            title: None,
+            opacity: Some(1.0),
+            floating: None,
+            blur: None,
+        }];
+
+        assert_eq!(
+            configured_window_properties(0.75, &rules, Some("firefox"), None),
+            [WindowProperty::Opacity(0.75)]
+        );
+        assert_eq!(
+            configured_window_properties(0.75, &rules, Some("foot"), None),
+            [WindowProperty::Opacity(0.75), WindowProperty::Opacity(1.0)]
         );
     }
 }

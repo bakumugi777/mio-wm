@@ -19,6 +19,8 @@ Mio does not interpret shell operators.
 Declaring one or more `bind` nodes replaces the complete built-in binding set. Window
 rules perform exact `app-id` and/or `title` matching and support `opacity` and
 `floating`. If multiple rules match, later property values win.
+`appearance.opacity` is the default for every Window; an exact application rule can
+override it. Matchers do not interpret `*` as a wildcard.
 `background-color` sets the solid World background visible where no Window or
 layer-shell background is drawn.
 The focused Window is marked by a thin water-film line along its bottom edge with a
