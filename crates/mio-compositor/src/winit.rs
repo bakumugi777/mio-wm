@@ -646,8 +646,14 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                     }
 
                     let cursor_result = backend.bind().and_then(|(renderer, mut framebuffer)| {
-                        render_pointer_overlays(state, renderer, &mut framebuffer, size)
-                            .map_err(Into::into)
+                        render_pointer_overlays(
+                            state,
+                            renderer,
+                            &mut framebuffer,
+                            size,
+                            primary_output.current_scale().fractional_scale(),
+                        )
+                        .map_err(Into::into)
                     });
                     if let Err(error) = cursor_result {
                         error!(%error, "cursor surface render failed");
@@ -895,6 +901,7 @@ fn render_pointer_overlays<R>(
     renderer: &mut R,
     framebuffer: &mut R::Framebuffer<'_>,
     size: smithay::utils::Size<i32, smithay::utils::Physical>,
+    output_scale: f64,
 ) -> Result<(), R::Error>
 where
     R: Renderer + ImportAll,
@@ -925,26 +932,26 @@ where
                 })
         });
         let location = (pointer_location - hotspot.to_f64())
-            .to_physical(1.0)
+            .to_physical(output_scale)
             .to_i32_round();
         elements.extend(render_elements_from_surface_tree(
             renderer,
             surface,
             location,
-            1.0,
+            Scale::from(output_scale),
             1.0,
             Kind::Cursor,
         ));
     }
     if let Some(icon) = &state.dnd_icon {
         let location = (pointer_location + icon.offset.to_f64())
-            .to_physical(1.0)
+            .to_physical(output_scale)
             .to_i32_round();
         elements.extend(render_elements_from_surface_tree(
             renderer,
             &icon.surface,
             location,
-            1.0,
+            Scale::from(output_scale),
             1.0,
             Kind::Unspecified,
         ));

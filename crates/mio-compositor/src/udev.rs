@@ -1216,7 +1216,8 @@ impl DirectBackend {
             }
         };
         let mut elements: Vec<DirectRenderElement> = Vec::new();
-        self.append_cursor_elements(state, now, &mut elements);
+        let output_scale = output.current_scale().fractional_scale();
+        self.append_cursor_elements(state, now, output_scale, &mut elements);
         let cursor_element_count = elements.len();
         if let (Some(config_error), Some(mode)) =
             (state.config_error.as_deref(), output.current_mode())
@@ -1358,6 +1359,7 @@ impl DirectBackend {
         &mut self,
         state: &crate::state::MioState,
         now: Instant,
+        output_scale: f64,
         elements: &mut Vec<DirectRenderElement>,
     ) {
         let pointer = state
@@ -1382,9 +1384,9 @@ impl DirectBackend {
                         &mut self.renderer,
                         &surface,
                         (pointer_location - hotspot.to_f64())
-                            .to_physical(1.0)
+                            .to_physical(output_scale)
                             .to_i32_round(),
-                        1.0,
+                        Scale::from(output_scale),
                         1.0,
                         Kind::Cursor,
                     );
@@ -1418,9 +1420,11 @@ impl DirectBackend {
                     self.repaint_scheduled = true;
                 }
                 let frame = cursor.frame(cursor_elapsed);
-                let location: Point<i32, Physical> = (pointer_location - frame.hotspot.to_f64())
-                    .to_physical(1.0)
-                    .to_i32_round();
+                let location = software_cursor_physical_location(
+                    pointer_location,
+                    frame.hotspot,
+                    output_scale,
+                );
                 match MemoryRenderBufferRenderElement::from_buffer(
                     &mut self.renderer,
                     location.to_f64(),
@@ -1441,9 +1445,9 @@ impl DirectBackend {
                     &mut self.renderer,
                     &icon.surface,
                     (pointer_location + icon.offset.to_f64())
-                        .to_physical(1.0)
+                        .to_physical(output_scale)
                         .to_i32_round(),
-                    1.0,
+                    Scale::from(output_scale),
                     1.0,
                     Kind::Unspecified,
                 );
@@ -1475,7 +1479,8 @@ impl DirectBackend {
                 );
             elements.extend(lock_elements.into_iter().map(DirectRenderElement::from));
         }
-        self.append_cursor_elements(state, Instant::now(), &mut elements);
+        let output_scale = output.current_scale().fractional_scale();
+        self.append_cursor_elements(state, Instant::now(), output_scale, &mut elements);
         let Some(scanout) = self.scanout.as_mut() else {
             return;
         };
@@ -1563,6 +1568,16 @@ impl DirectBackend {
     }
 }
 
+fn software_cursor_physical_location(
+    pointer_location: Point<f64, Logical>,
+    hotspot: Point<i32, Logical>,
+    output_scale: f64,
+) -> Point<i32, Physical> {
+    (pointer_location - hotspot.to_f64())
+        .to_physical(output_scale)
+        .to_i32_round()
+}
+
 fn config_error_overlay_elements(
     size: smithay::utils::Size<i32, Physical>,
     error: &str,
@@ -1623,10 +1638,11 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        classify_hotplug, closing_visual_progress, direct_scene, ConfigErrorOverlayState,
-        DirectScene, HotplugAction, HotplugEventKind,
+        classify_hotplug, closing_visual_progress, direct_scene, software_cursor_physical_location,
+        ConfigErrorOverlayState, DirectScene, HotplugAction, HotplugEventKind,
     };
     use smithay::backend::renderer::element::Element;
+    use smithay::utils::{Logical, Physical, Point};
 
     #[test]
     fn closing_visual_progress_runs_backwards_and_clamps() {
@@ -1705,5 +1721,17 @@ mod tests {
         overlay.elements(size, "first error");
         overlay.elements(size, "second error");
         assert_eq!(overlay.commit, 2);
+    }
+
+    #[test]
+    fn software_cursor_tip_tracks_fractionally_scaled_pointer() {
+        let pointer = Point::<f64, Logical>::from((1535.2, 863.2));
+        let hotspot = Point::<i32, Logical>::from((4, 7));
+        let location = software_cursor_physical_location(pointer, hotspot, 1.25);
+        assert_eq!(location, Point::from((1914, 1070)));
+        assert_eq!(
+            location + Point::<i32, Physical>::from((5, 9)),
+            Point::from((1919, 1079))
+        );
     }
 }

@@ -664,6 +664,8 @@ session lockおよびexclusive layer-shellの入力規則はshortcut inhibitor�
 こと。Fractional output scaleとCamera zoomおよび整数World Gridを混同しないこと。
 Output scaleはKDLから`0.5..=4.0`の範囲で指定でき、設定再読み込み時には既存Outputへ
 適用すること。
+fractional scale時もpointerの論理座標、cursorの描画位置、hotspotおよびclick判定を同じ
+Output scaleで変換し、画面端まで到達できること。
 
 ---
 
@@ -1021,6 +1023,7 @@ Mioは外部設定ファイルを持たなければならない。
 設定エラー中は通常contentより上へ復旧方法を示す警告を描画し、reload成功時に消すこと。
 session lock中は設定内容やエラーの有無をlock surfaceより上へ表示してはならない。
 警告には可能な範囲で該当行番号、列番号、設定項目または入力行の概要を含めること。
+静止した警告表示そのものを理由に継続的な再描画やframe submissionを発生させないこと。
 
 ---
 

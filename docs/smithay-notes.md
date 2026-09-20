@@ -47,11 +47,13 @@ stale pixels underneath translucent layer-shell content. Event-driven redraw sti
 prevents idle rendering, and Mio does not swap when Smithay reports no current scene
 damage. A future DRM backend may use reliable per-output buffer age normally.
 
-Closing snapshots, cursor wake, surface cursors, drag icons, and the
-configuration-error overlay force submission while visible and for one cleanup frame afterward
-because they are composed outside `OutputDamageTracker`. The direct backend represents the
-overlay as solid render elements in its DRM scene; the nested backend draws it into the bound
-framebuffer after the ordinary scene.
+Closing snapshots, cursor wake, surface cursors, and drag icons may require submission outside
+ordinary scene damage. The direct backend represents the configuration-error overlay as solid
+render elements in its DRM scene. Their render-element IDs remain stable while the output size
+and error text are unchanged, and their commit counter advances only when either value changes.
+Otherwise `OutputDamageTracker` treats an unchanged warning as new damage every frame and keeps
+the DRM submission loop active. The nested backend draws the warning into the bound framebuffer
+after the ordinary scene; showing the warning must not itself request another redraw.
 
 The nested winit backend must not request another redraw unconditionally. Mio wakes it
 from a calloop channel on Wayland surface commits, requests immediately after host
@@ -587,6 +589,13 @@ Mio's Camera zoom and Window `GridRect`.
 object. Mio selects the current Output scale and writes it through
 `with_fractional_scale`. Client buffer viewport, fractional Output scale, Mio Camera
 zoom, and Window `GridRect` are four distinct concerns.
+
+Pointer state remains in logical Output coordinates. Cursor surfaces and drag icons
+must convert their logical origin with `Output::current_scale().fractional_scale()` and
+pass the same `Scale` to `render_elements_from_surface_tree`. The direct backend's
+software cursor follows the same rule for its logical hotspot. Rendering these overlays
+with a hard-coded scale of `1.0` makes the visible cursor stop at the logical bottom edge
+and separates its hotspot from the logical click position on fractionally scaled Outputs.
 
 ## Phase 10 input-method findings
 
