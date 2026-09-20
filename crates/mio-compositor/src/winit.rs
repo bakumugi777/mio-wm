@@ -1251,15 +1251,18 @@ where
     let damage = Rectangle::from_size(size);
     let mut elements = Vec::<WaylandSurfaceRenderElement<R>>::new();
     for (output, surface) in &state.session_lock_surfaces {
+        let output_scale = output.current_scale().fractional_scale();
         let location = state
             .space
             .output_geometry(output)
-            .map_or((0, 0), |geometry| geometry.loc.into());
+            .map_or((0, 0), |geometry| {
+                geometry.loc.to_physical_precise_round(output_scale).into()
+            });
         elements.extend(render_elements_from_surface_tree(
             renderer,
             surface.wl_surface(),
             location,
-            1.0,
+            Scale::from(output_scale),
             1.0,
             Kind::Unspecified,
         ));

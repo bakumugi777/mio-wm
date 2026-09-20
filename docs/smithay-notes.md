@@ -250,6 +250,11 @@ logic or persist a layout group.
   scale before deriving the global pointer-focus origin. Mixing unscaled local deltas
   with screen coordinates makes visible popup regions receive out-of-bounds local
   coordinates after an interactive resize.
+- Camera animation can move or rescale a surface tree while the physical pointer stays
+  still. After changing the presentation transform, Mio must issue pointer motion at
+  the unchanged global logical position with a freshly computed surface origin. If it
+  keeps Smithay's previous pointer focus origin, the next button event reaches the
+  correct surface with stale pre-zoom local coordinates.
 - A normal Window's visual gap must be scaled by the Camera zoom before deriving its
   presented rectangle, while its normal client configure keeps the unzoomed gap. This
   keeps the `RenderWindow` scale equal to the Camera scale, so Smithay's tracked popup
@@ -564,6 +569,12 @@ frame. The current cursor remains above the lock UI without exposing desktop
 content. Session-lock request, surface creation, and explicit unlock each wake the
 backend; lock-surface frame callbacks are sent instead of callbacks for hidden desktop
 content while the lock remains active.
+
+`ext-session-lock-v1` configures lock surfaces in logical Output coordinates. The
+configured size must therefore divide the physical mode size by the Output scale, and
+the completed surface tree must be rendered with that same Output scale. Configuring
+the physical mode size and rendering at scale `1.0` only happens to work at scale
+`1.0`; fractional scale otherwise produces an oversized or incomplete lock UI.
 
 ## Phase 10 idle-inhibit findings
 

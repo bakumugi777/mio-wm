@@ -1472,16 +1472,13 @@ impl DirectBackend {
             if surface_output != &output {
                 continue;
             }
-            let location = state
-                .space
-                .output_geometry(surface_output)
-                .map_or((0, 0), |geometry| geometry.loc.into());
+            let output_scale = output.current_scale().fractional_scale();
             let lock_elements: Vec<WaylandSurfaceRenderElement<GlesRenderer>> =
                 render_elements_from_surface_tree(
                     &mut self.renderer,
                     surface.wl_surface(),
-                    location,
-                    1.0,
+                    (0, 0),
+                    Scale::from(output_scale),
                     1.0,
                     Kind::Unspecified,
                 );

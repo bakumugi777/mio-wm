@@ -3,7 +3,7 @@ use smithay::{
     input::pointer::CursorImageStatus,
     output::Output,
     reexports::wayland_server::protocol::wl_output::WlOutput,
-    utils::SERIAL_COUNTER,
+    utils::{Physical, Size, SERIAL_COUNTER},
     wayland::session_lock::{
         LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
     },
@@ -77,10 +77,10 @@ impl SessionLockHandler for MioState {
             return;
         };
         if let Some(mode) = output.current_mode() {
-            let width = u32::try_from(mode.size.w).unwrap_or_default();
-            let height = u32::try_from(mode.size.h).unwrap_or_default();
+            let size =
+                session_lock_logical_size(mode.size, output.current_scale().fractional_scale());
             surface.with_pending_state(|state| {
-                state.size = Some((width, height).into());
+                state.size = Some(size);
             });
             surface.send_configure();
         }
@@ -95,6 +95,37 @@ impl SessionLockHandler for MioState {
         if let Some(sender) = &self.redraw_sender {
             let _ = sender.send(());
         }
+    }
+}
+
+fn session_lock_logical_size(
+    size: Size<i32, Physical>,
+    output_scale: f64,
+) -> Size<u32, smithay::utils::Logical> {
+    let size: Size<i32, smithay::utils::Logical> =
+        size.to_f64().to_logical(output_scale).to_i32_round();
+    Size::from((
+        u32::try_from(size.w.max(0)).unwrap_or_default(),
+        u32::try_from(size.h.max(0)).unwrap_or_default(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use smithay::utils::{Physical, Size};
+
+    use super::session_lock_logical_size;
+
+    #[test]
+    fn session_lock_configure_size_follows_fractional_output_scale() {
+        assert_eq!(
+            session_lock_logical_size(Size::<i32, Physical>::from((1920, 1080)), 1.25),
+            (1536, 864).into()
+        );
+        assert_eq!(
+            session_lock_logical_size(Size::<i32, Physical>::from((1920, 1080)), 1.0),
+            (1920, 1080).into()
+        );
     }
 }
 
