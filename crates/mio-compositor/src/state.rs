@@ -27,7 +27,7 @@ use smithay::{
     },
     input::{
         keyboard::XkbConfig,
-        pointer::{CursorIcon, CursorImageStatus, MotionEvent},
+        pointer::{CursorIcon, CursorImageStatus},
         Seat, SeatState,
     },
     reexports::{
@@ -1114,26 +1114,6 @@ impl MioState {
             })
     }
 
-    fn refresh_pointer_focus(&mut self, now: Instant) {
-        let Some(pointer) = self.seat.get_pointer() else {
-            return;
-        };
-        let position = pointer.current_location();
-        let under = self.surface_under(position);
-        #[allow(clippy::cast_possible_truncation)]
-        let time = now.saturating_duration_since(self.start_time).as_millis() as u32;
-        pointer.motion(
-            self,
-            under,
-            &MotionEvent {
-                location: position,
-                serial: SERIAL_COUNTER.next_serial(),
-                time,
-            },
-        );
-        pointer.frame(self);
-    }
-
     fn layer_surface_under(
         &self,
         position: Point<f64, Logical>,
@@ -1993,7 +1973,6 @@ impl MioState {
         });
         let resizing = self.pending_window_resize.as_ref().map(|resize| resize.id);
         let mut active = false;
-        let mut pointer_focus_needs_refresh = false;
 
         for managed in &mut self.managed_windows {
             if !managed.ready_to_present {
@@ -2043,8 +2022,6 @@ impl MioState {
             let client_width = round_animation_size(managed.client_width.current());
             let client_height = round_animation_size(managed.client_height.current());
             let committed_size = SpaceElement::geometry(&managed.window.window).size;
-            let previous_scale = managed.window.scale();
-            let previous_location = self.space.element_location(&managed.window);
             let mut scale = render_scale_for_committed_size(
                 (current.width, current.height),
                 (committed_size.w, committed_size.h),
@@ -2068,12 +2045,6 @@ impl MioState {
                 location.0 = location.0.saturating_add(offset.0);
                 location.1 = location.1.saturating_add(offset.1);
             }
-            pointer_focus_needs_refresh |= presentation_transform_changed(
-                previous_location,
-                location.into(),
-                previous_scale,
-                scale,
-            );
             self.space
                 .map_element(managed.window.clone(), location, false);
             if managed.auto_floating && (rect_animation_active || previous_rect != current) {
@@ -2109,9 +2080,6 @@ impl MioState {
         // Mio's focus-derived raise after those presentation-only remaps so
         // rendering and `element_under` agree on the focused topmost Window.
         self.raise_focused_window();
-        if pointer_focus_needs_refresh {
-            self.refresh_pointer_focus(now);
-        }
 
         self.finish_close_transitions();
         active
@@ -2320,15 +2288,6 @@ fn render_scale_for_committed_size(
     ))
 }
 
-fn presentation_transform_changed(
-    previous_location: Option<Point<i32, Logical>>,
-    location: Point<i32, Logical>,
-    previous_scale: Scale<f64>,
-    scale: Scale<f64>,
-) -> bool {
-    previous_location != Some(location) || previous_scale != scale
-}
-
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 fn presented_corner_radius(corner_radius: u32, output_scale: f64, render_scale: f64) -> f32 {
     corner_radius as f32 * output_scale as f32 * render_scale as f32
@@ -2421,10 +2380,10 @@ mod tests {
     use super::{
         apply_window_gaps, camera_should_follow_on_activation, floating_z_index,
         focus_indicator_reveal, merge_focus_candidates, presentation_screen_rect,
-        presentation_transform_changed, presented_corner_radius, record_initial_client_size,
-        render_scale_for_committed_size, restore_preferred_focus, scaled_surface_origin,
-        should_round_surface_element, split_output_area, undistorted_resize_scale,
-        window_removal_changes_focus, window_transition_speed, CameraFollowPolicy, ScreenRect,
+        presented_corner_radius, record_initial_client_size, render_scale_for_committed_size,
+        restore_preferred_focus, scaled_surface_origin, should_round_surface_element,
+        split_output_area, undistorted_resize_scale, window_removal_changes_focus,
+        window_transition_speed, CameraFollowPolicy, ScreenRect,
     };
 
     #[test]
@@ -2450,28 +2409,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn pointer_focus_refreshes_when_window_presentation_moves_or_scales() {
-        let location = Point::<i32, Logical>::from((100, 80));
-        assert!(!presentation_transform_changed(
-            Some(location),
-            location,
-            Scale::from(0.5),
-            Scale::from(0.5),
-        ));
-        assert!(presentation_transform_changed(
-            Some(location),
-            (101, 80).into(),
-            Scale::from(0.5),
-            Scale::from(0.5),
-        ));
-        assert!(presentation_transform_changed(
-            Some(location),
-            location,
-            Scale::from(1.0),
-            Scale::from(0.5),
-        ));
-    }
     use mio_core::{
         Camera, GridPoint, GridRect, GridSize, OutputId, Presentation, WindowId, World,
     };
