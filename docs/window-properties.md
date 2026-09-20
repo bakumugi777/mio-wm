@@ -51,6 +51,10 @@ runtime override層は保持され、そのPropertyについて引き続きConfi
 Windowを移す機能ではない。runtimeで`floating=false`を指定すればConfig Ruleの`true`より
 優先され、clearすれば再びRuleの値へ戻る。
 
+新規Windowが初回表示前にConfig Ruleによって`floating=true`になった場合は、起動直前に
+focusされていたWindowの位置へ重ねて配置する。これは初期配置だけに適用し、設定reloadや
+runtimeでのfloating切替によって既存Windowを移動しない。
+
 ## 設定再読み込み
 
 `reload-config`は新しい設定全体の検証に成功してから置き換える。不正な設定なら直前の有効な

@@ -1423,6 +1423,11 @@ impl MioState {
         self.managed_windows.iter().find(|managed| managed.id == id)
     }
 
+    pub(crate) fn window_ready_to_present(&self, id: WindowId) -> bool {
+        self.managed_window(id)
+            .is_some_and(|managed| managed.ready_to_present)
+    }
+
     pub(crate) fn automatic_floating_anchor(&self, id: WindowId) -> Option<WorldPoint> {
         self.managed_window(id)?
             .return_focus_candidates

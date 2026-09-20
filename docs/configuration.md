@@ -210,3 +210,5 @@ window-rule {
 利用できるPropertyは`opacity`、`floating`、`blur`である。runtime overrideはWindowごとに
 保持され、設定ファイル自体を書き換えない。再適用、clear、寿命を含む詳細は
 [Window RuleとPropertyリファレンス](window-properties.md)を参照する。
+初回表示前にRuleで`floating=true`になった新規Windowは、起動直前にfocusされていた
+Windowへ重ねて配置する。reloadや手動のfloating切替では既存Windowを移動しない。

@@ -1136,6 +1136,11 @@ window-rule {
 }
 ```
 
+新規Windowが初回表示前にWindow Ruleから`floating=true`を得た場合は、起動直前のfocused
+Windowを既存のfocus履歴から選び、そのWorld位置へ重ねる。これはfloatingという既存Propertyの
+初期配置であり、専用dialog modeや親子containerを追加しない。設定reloadやruntime overrideの
+変更では既存Windowを再配置しない。
+
 ---
 
 # 27. Animation Configuration

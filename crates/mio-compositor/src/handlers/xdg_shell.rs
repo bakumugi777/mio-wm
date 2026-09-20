@@ -346,11 +346,34 @@ impl MioState {
         let Some(id) = self.window_id_for_surface(surface.wl_surface()) else {
             return;
         };
+        let was_floating = self
+            .world
+            .window(id)
+            .is_some_and(|window| window.effective_properties().floating);
+        let ready_to_present = self.window_ready_to_present(id);
+        let initial_floating_anchor = self.automatic_floating_anchor(id);
         if self
             .world
             .replace_config_window_properties(id, &properties)
             .is_ok()
         {
+            let is_floating = self
+                .world
+                .window(id)
+                .is_some_and(|window| window.effective_properties().floating);
+            if should_place_initial_config_floating(ready_to_present, was_floating, is_floating) {
+                if let Some(origin) = initial_floating_anchor {
+                    if let Err(error) = self
+                        .world
+                        .apply(Action::MoveWindowContinuous { id, origin })
+                    {
+                        tracing::warn!(
+                            %error,
+                            "failed to place configured floating Window over previous focus"
+                        );
+                    }
+                }
+            }
             self.sync_layout(false);
         }
     }
@@ -569,6 +592,14 @@ fn configured_window_properties(
         .collect()
 }
 
+const fn should_place_initial_config_floating(
+    ready_to_present: bool,
+    was_floating: bool,
+    is_floating: bool,
+) -> bool {
+    !ready_to_present && !was_floating && is_floating
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
@@ -576,7 +607,7 @@ mod tests {
     use super::{
         accept_client_presentation_request, configured_window_properties, dialog_floating_action,
         dialog_should_float, fixed_size_constraints, matching_window_rule_properties, ping_due,
-        rectangle_overlap_area, PingDue,
+        rectangle_overlap_area, should_place_initial_config_floating, PingDue,
     };
     use crate::config::WindowRule;
     use mio_core::{Action, Presentation, WindowId, WindowProperty, WindowPropertyKind};
@@ -693,5 +724,13 @@ mod tests {
             configured_window_properties(0.75, &rules, Some("foot"), None),
             [WindowProperty::Opacity(0.75), WindowProperty::Opacity(1.0)]
         );
+    }
+
+    #[test]
+    fn config_floating_placement_only_runs_during_initial_classification() {
+        assert!(should_place_initial_config_floating(false, false, true));
+        assert!(!should_place_initial_config_floating(true, false, true));
+        assert!(!should_place_initial_config_floating(false, true, true));
+        assert!(!should_place_initial_config_floating(false, false, false));
     }
 }
