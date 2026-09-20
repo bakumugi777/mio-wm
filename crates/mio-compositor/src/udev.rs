@@ -135,11 +135,34 @@ struct DirectBackend {
     cursor_wake_frame: Rc<RefCell<CursorWakeFrame>>,
     cursor_wake_id: Id,
     cursor_wake_commit: usize,
+    config_error_overlay: ConfigErrorOverlayState,
     diagnostics_started: std::time::Instant,
     diagnostics_renders: u64,
     diagnostics_submits: u64,
     diagnostics_cpu: std::time::Duration,
     diagnostics_cpu_max: std::time::Duration,
+}
+
+#[derive(Default)]
+struct ConfigErrorOverlayState {
+    key: Option<(smithay::utils::Size<i32, Physical>, String)>,
+    ids: Vec<Id>,
+    commit: usize,
+}
+
+impl ConfigErrorOverlayState {
+    fn elements(
+        &mut self,
+        size: smithay::utils::Size<i32, Physical>,
+        error: &str,
+    ) -> Vec<DirectRenderElement> {
+        let key = (size, error.to_owned());
+        if self.key.as_ref() != Some(&key) {
+            self.key = Some(key);
+            self.commit = self.commit.wrapping_add(1);
+        }
+        config_error_overlay_elements(size, error, &mut self.ids, self.commit)
+    }
 }
 
 #[derive(Debug)]
@@ -419,6 +442,7 @@ pub fn init(
         cursor_wake_frame: Rc::new(RefCell::new(CursorWakeFrame::default())),
         cursor_wake_id: Id::new(),
         cursor_wake_commit: 0,
+        config_error_overlay: ConfigErrorOverlayState::default(),
         diagnostics_started: std::time::Instant::now(),
         diagnostics_renders: 0,
         diagnostics_submits: 0,
@@ -1197,7 +1221,7 @@ impl DirectBackend {
         if let (Some(config_error), Some(mode)) =
             (state.config_error.as_deref(), output.current_mode())
         {
-            elements.extend(config_error_overlay_elements(mode.size, config_error));
+            elements.extend(self.config_error_overlay.elements(mode.size, config_error));
         }
         let layer_split_valid = upper_layer_element_count <= space_elements.len();
         let remaining_space_elements = if layer_split_valid {
@@ -1542,6 +1566,8 @@ impl DirectBackend {
 fn config_error_overlay_elements(
     size: smithay::utils::Size<i32, Physical>,
     error: &str,
+    ids: &mut Vec<Id>,
+    commit: usize,
 ) -> Vec<DirectRenderElement> {
     use smithay::backend::renderer::{
         element::solid::SolidColorRenderElement, utils::CommitCounter,
@@ -1550,55 +1576,45 @@ fn config_error_overlay_elements(
     let height = size.h.clamp(1, 72);
     let background = Rectangle::new((0, 0).into(), (size.w, height).into());
     let accent = Rectangle::new((0, 0).into(), (6.min(size.w), height).into());
-    let commit = CommitCounter::from(1usize);
-    let mut elements = crate::winit::bitmap_text_rects("CONFIG ERROR - USING DEFAULTS", (14, 8), 2)
+    let commit = CommitCounter::from(commit);
+    let mut rectangles =
+        crate::winit::bitmap_text_rects("CONFIG ERROR - USING DEFAULTS", (14, 8), 2)
+            .into_iter()
+            .chain(crate::winit::bitmap_text_rects(
+                "FIX FILE, THEN RELOAD CONFIG",
+                (14, 28),
+                2,
+            ))
+            .chain(crate::winit::bitmap_text_rects(
+                &crate::winit::config_error_summary(
+                    error,
+                    usize::try_from((size.w - 28).max(0) / 12).unwrap_or(0),
+                ),
+                (14, 48),
+                2,
+            ))
+            .filter(|rectangle| rectangle.loc.x < size.w && rectangle.loc.y < height)
+            .map(|rectangle| (rectangle, [1.0, 0.96, 0.92, 1.0]))
+            .collect::<Vec<_>>();
+    rectangles.push((accent, [1.0, 0.72, 0.18, 1.0]));
+    rectangles.push((background, [0.45, 0.03, 0.04, 0.96]));
+    while ids.len() < rectangles.len() {
+        ids.push(Id::new());
+    }
+    rectangles
         .into_iter()
-        .chain(crate::winit::bitmap_text_rects(
-            "FIX FILE, THEN RELOAD CONFIG",
-            (14, 28),
-            2,
-        ))
-        .chain(crate::winit::bitmap_text_rects(
-            &crate::winit::config_error_summary(
-                error,
-                usize::try_from((size.w - 28).max(0) / 12).unwrap_or(0),
-            ),
-            (14, 48),
-            2,
-        ))
-        .filter(|rectangle| rectangle.loc.x < size.w && rectangle.loc.y < height)
-        .map(|rectangle| {
+        .enumerate()
+        .map(|(index, (rectangle, color))| {
             SolidColorRenderElement::new(
-                Id::new(),
+                ids[index].clone(),
                 rectangle,
                 commit,
-                [1.0, 0.96, 0.92, 1.0],
+                color,
                 Kind::Unspecified,
             )
             .into()
         })
-        .collect::<Vec<_>>();
-    elements.push(
-        SolidColorRenderElement::new(
-            Id::new(),
-            accent,
-            commit,
-            [1.0, 0.72, 0.18, 1.0],
-            Kind::Unspecified,
-        )
-        .into(),
-    );
-    elements.push(
-        SolidColorRenderElement::new(
-            Id::new(),
-            background,
-            commit,
-            [0.45, 0.03, 0.04, 0.96],
-            Kind::Unspecified,
-        )
-        .into(),
-    );
-    elements
+        .collect()
 }
 
 #[cfg(test)]
@@ -1607,9 +1623,10 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        classify_hotplug, closing_visual_progress, config_error_overlay_elements, direct_scene,
+        classify_hotplug, closing_visual_progress, direct_scene, ConfigErrorOverlayState,
         DirectScene, HotplugAction, HotplugEventKind,
     };
+    use smithay::backend::renderer::element::Element;
 
     #[test]
     fn closing_visual_progress_runs_backwards_and_clamps() {
@@ -1661,10 +1678,32 @@ mod tests {
 
     #[test]
     fn configuration_errors_create_a_direct_backend_overlay() {
-        let elements = config_error_overlay_elements(
+        let mut overlay = ConfigErrorOverlayState::default();
+        let elements = overlay.elements(
             smithay::utils::Size::from((1920, 1080)),
             "unsupported key Space at line 130",
         );
         assert!(elements.len() > 2);
+    }
+
+    #[test]
+    fn unchanged_configuration_error_keeps_overlay_element_ids() {
+        let mut overlay = ConfigErrorOverlayState::default();
+        let size = smithay::utils::Size::from((1920, 1080));
+        let first = overlay.elements(size, "unsupported key Space at line 130");
+        let second = overlay.elements(size, "unsupported key Space at line 130");
+        let first_ids = first.iter().map(Element::id).collect::<Vec<_>>();
+        let second_ids = second.iter().map(Element::id).collect::<Vec<_>>();
+        assert_eq!(first_ids, second_ids);
+        assert_eq!(overlay.commit, 1);
+    }
+
+    #[test]
+    fn changed_configuration_error_advances_overlay_commit() {
+        let mut overlay = ConfigErrorOverlayState::default();
+        let size = smithay::utils::Size::from((1920, 1080));
+        overlay.elements(size, "first error");
+        overlay.elements(size, "second error");
+        assert_eq!(overlay.commit, 2);
     }
 }

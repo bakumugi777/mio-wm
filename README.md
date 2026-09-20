@@ -28,6 +28,8 @@ nix-shell
 
 通常のNixOS sessionとして導入するためのflake packageとNixOS moduleもあります。
 SDDMへの登録を含む設定例は[Installation](docs/installation.md)を参照してください。
+NixOS moduleはMio session内でGNOME KeyringのSecrets componentも開始するため、GNOME desktopを
+使用していなくてもGitHub CLI等がlogin keyringへ保存した認証情報を利用できます。
 NixOS以外では`install.sh`を使い、release build、標準Wayland session entryの登録、
 manifestに基づくアンインストールを行えます。
 
@@ -142,6 +144,21 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 
 設定の再読み込みに失敗した場合、直前の有効な設定を維持してエラーを表示します。起動時の
 設定が不正な場合は組み込み既定値で起動し、修正後の再読み込みによって復旧できます。
+
+### 表示スケール
+
+文字、UI、マウスカーソルが小さく見える場合は、Wayland Outputの表示スケールを変更できます。
+既定値は`1.0`で、`0.5`から`4.0`までの小数値にも対応します。例えば次の設定では、文字や
+UIが`1.0`より大きく表示されます。
+
+```kdl
+output {
+    scale 1.25
+}
+```
+
+これはクライアントへ通知するOutput scaleであり、World全体を遠近表示するCamera zoomとは
+別の設定です。設定保存後に`Super+R`で再読み込みするか、Mioを再起動すると反映されます。
 
 ### 設定ファイルの分割
 

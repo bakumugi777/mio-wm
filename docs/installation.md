@@ -46,6 +46,10 @@ system flakeの`inputs`へMioを追加する。
 `programs.mio.enable`はMio package、Wayland session、画面共有用portalを導入する。
 session起動処理はMioのWayland socketが準備できた後にDBus環境とportalを自動更新するため、
 ユーザーのKDLへportal用commandを書く必要はない。
+また、GNOME KeyringのSecrets componentを導入し、SDDM等のPAM loginで解除されたlogin
+keyringをMio sessionから利用可能にする。これはGitHub CLIやbrowser等の認証情報保存に使われ、
+GNOME desktop本体を導入または起動するものではない。Mioは全XDG autostartを開始しないため、
+KDLで明示した常駐applicationがこの対応によって二重起動することはない。
 標準設定を試せるよう、既定ではFoot、Waybar、Wofiも導入する。不要なら
 `programs.mio.recommendedPackages = false;`にする。X11互換が不要なら
 `programs.mio.xwayland.enable = false;`にする。

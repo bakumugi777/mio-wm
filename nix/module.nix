@@ -21,6 +21,13 @@ let
     ${pkgs.systemd}/bin/systemctl --user restart mio-xdg-desktop-portal.service
   '');
   sessionLauncher = pkgs.writeShellScript "mio-session" ''
+    if keyring_environment="$(/run/wrappers/bin/gnome-keyring-daemon --start --components=secrets)"; then
+      eval "$keyring_environment"
+      export GNOME_KEYRING_CONTROL
+    else
+      echo "mio-session: failed to start the GNOME Keyring secrets component" >&2
+    fi
+
     export MIO_SESSION_HELPER=${lib.escapeShellArg sessionHelper}
     ${lib.optionalString cfg.portal.enable ''
       cleanup_portal() {
@@ -87,6 +94,7 @@ in
       ++ lib.optionals cfg.xwayland.enable [ pkgs.xwayland-satellite ];
 
     services.displayManager.sessionPackages = [ sessionPackage ];
+    services.gnome.gnome-keyring.enable = lib.mkDefault true;
     hardware.graphics.enable = lib.mkDefault true;
 
     xdg.portal = lib.mkIf cfg.portal.enable {
@@ -95,6 +103,7 @@ in
         default = lib.mkDefault [ "gtk" ];
         "org.freedesktop.impl.portal.ScreenCast" = lib.mkDefault [ "wlr" ];
         "org.freedesktop.impl.portal.Screenshot" = lib.mkDefault [ "wlr" ];
+        "org.freedesktop.impl.portal.Secret" = lib.mkDefault [ "gnome-keyring" ];
       };
       extraPortals = [
         pkgs.xdg-desktop-portal-gtk
