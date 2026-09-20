@@ -665,7 +665,8 @@ session lockおよびexclusive layer-shellの入力規則はshortcut inhibitor�
 Output scaleはKDLから`0.5..=4.0`の範囲で指定でき、設定再読み込み時には既存Outputへ
 適用すること。
 fractional scale時もpointerの論理座標、cursorの描画位置、hotspotおよびclick判定を同じ
-Output scaleで変換し、画面端まで到達できること。
+Output scaleで変換し、画面端まで到達できること。cursor wakeの中心線と幅も同じ変換に
+従い、cursorから位置がずれないこと。
 
 ---
 

@@ -778,6 +778,7 @@ pub struct CursorWakeElement {
     wake_width: f32,
     cursor_size: f32,
     distortion_strength: f32,
+    output_scale: f64,
     cache: std::rc::Rc<RefCell<CursorWakeFrame>>,
 }
 
@@ -792,6 +793,7 @@ impl CursorWakeElement {
         wake_width: f32,
         cursor_size: f32,
         distortion_strength: f32,
+        output_scale: f64,
         cache: std::rc::Rc<RefCell<CursorWakeFrame>>,
     ) -> Self {
         Self {
@@ -803,6 +805,7 @@ impl CursorWakeElement {
             wake_width,
             cursor_size,
             distortion_strength,
+            output_scale,
             cache,
         }
     }
@@ -875,6 +878,7 @@ impl RenderElement<GlesRenderer> for CursorWakeElement {
             self.wake_width,
             self.cursor_size,
             self.distortion_strength,
+            self.output_scale,
         )
     }
 }
@@ -1088,6 +1092,13 @@ pub fn compile_cursor_wake_shader(
     Ok(CursorWakePrograms { ribbon })
 }
 
+fn cursor_wake_physical_point(
+    point: Point<f64, Logical>,
+    output_scale: f64,
+) -> Point<f64, Physical> {
+    point.to_physical(output_scale)
+}
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -1101,6 +1112,7 @@ pub fn draw_cursor_wake(
     wake_width: f32,
     cursor_size: f32,
     distortion_strength: f32,
+    output_scale: f64,
 ) -> Result<(), GlesError> {
     let size = frame
         .output_size()
@@ -1109,14 +1121,20 @@ pub fn draw_cursor_wake(
     let screen = cache.screen.as_ref().ok_or(GlesError::BlitError)?;
     let mut centers = Vec::with_capacity(wake.segments.len() + 1);
     for (index, (segment, age)) in wake.segments.iter().enumerate() {
-        let start: Point<f64, Physical> = (segment.start.x, segment.start.y).into();
-        let end: Point<f64, Physical> = (segment.end.x, segment.end.y).into();
+        let start = cursor_wake_physical_point(segment.start, output_scale);
+        let end = cursor_wake_physical_point(segment.end, output_scale);
         if index == 0 {
             centers.push((start.x as f32, start.y as f32, *age, segment.strength));
         }
         centers.push((end.x as f32, end.y as f32, *age, segment.strength));
     }
-    let vertices = build_ribbon_vertices(&centers, wake_width, cursor_size);
+    #[allow(clippy::cast_possible_truncation)]
+    let output_scale = output_scale as f32;
+    let vertices = build_ribbon_vertices(
+        &centers,
+        wake_width * output_scale,
+        cursor_size * output_scale,
+    );
     if !cache.draw_reported && vertices.len() >= 26 {
         let (min_x, max_x, min_y, max_y) = vertices.iter().fold(
             (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
@@ -2353,6 +2371,14 @@ mod tests {
             .hypot(vertices[last].position[1] - vertices[last + 1].position[1]);
         assert!(first_width > last_width);
         assert!((last_width - 24.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn cursor_wake_tracks_fractionally_scaled_pointer_coordinates() {
+        let logical = Point::<f64, Logical>::from((1535.2, 863.2));
+        let physical = cursor_wake_physical_point(logical, 1.25);
+        assert!((physical.x - 1919.0).abs() < 0.001);
+        assert!((physical.y - 1079.0).abs() < 0.001);
     }
 
     #[test]

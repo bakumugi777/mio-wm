@@ -596,6 +596,10 @@ pass the same `Scale` to `render_elements_from_surface_tree`. The direct backend
 software cursor follows the same rule for its logical hotspot. Rendering these overlays
 with a hard-coded scale of `1.0` makes the visible cursor stop at the logical bottom edge
 and separates its hotspot from the logical click position on fractionally scaled Outputs.
+Cursor-wake history also remains logical. Its render element uses the logical Output size,
+then converts the centerline, configured width, and cursor-sized head to physical coordinates
+when building the shader mesh. Treating those history values as physical pixels offsets and
+narrows the wake relative to the scaled cursor.
 
 ## Phase 10 input-method findings
 

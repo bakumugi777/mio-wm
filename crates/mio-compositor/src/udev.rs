@@ -1256,12 +1256,15 @@ impl DirectBackend {
                 CursorWakeElement::new(
                     self.cursor_wake_id.clone(),
                     smithay::backend::renderer::utils::CommitCounter::from(self.cursor_wake_commit),
-                    Rectangle::<i32, Logical>::from_size(mode.size.to_logical(1)),
+                    Rectangle::<i32, Logical>::from_size(
+                        mode.size.to_f64().to_logical(output_scale).to_i32_round(),
+                    ),
                     programs,
                     wake,
                     effects.cursor_wake_width,
                     self.cursor_size as f32,
                     effects.cursor_wake_strength,
+                    output_scale,
                     Rc::clone(&self.cursor_wake_frame),
                 )
                 .into(),

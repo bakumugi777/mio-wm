@@ -428,6 +428,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                     if cursor_wake_rendered {
                         cursor_wake_commit = cursor_wake_commit.wrapping_add(1);
                     }
+                    let output_scale = primary_output.current_scale().fractional_scale();
                     let cursor_wake_element = cursor_wake_program
                         .clone()
                         .zip(cursor_wake.clone())
@@ -437,12 +438,17 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                                 smithay::backend::renderer::utils::CommitCounter::from(
                                     cursor_wake_commit,
                                 ),
-                                Rectangle::<i32, Logical>::from_size(size.to_logical(1)),
+                                Rectangle::<i32, Logical>::from_size(
+                                    size.to_f64()
+                                        .to_logical(output_scale)
+                                        .to_i32_round(),
+                                ),
                                 programs,
                                 wake,
                                 effects.cursor_wake_width,
                                 cursor_size,
                                 effects.cursor_wake_strength,
+                                output_scale,
                                 Rc::clone(&cursor_wake_frame),
                             )
                         });
