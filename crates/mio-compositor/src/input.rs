@@ -1640,15 +1640,7 @@ impl MioState {
             }
             let vertical = amount(Axis::Vertical);
             if vertical != 0.0 {
-                let current = self.world.camera().zoom();
-                let target = camera_zoom_from_scroll(current, vertical);
-                match self.world.apply(Action::CameraZoom(target)) {
-                    Ok(_) => {
-                        info!(current, target, vertical, "mouse Camera zoom");
-                        self.sync_layout(false);
-                    }
-                    Err(error) => debug!(%error, "mouse Camera zoom rejected"),
-                }
+                self.pending_camera_zoom_scroll += vertical;
             }
             return;
         }
@@ -1932,7 +1924,7 @@ fn pointer_click_target(
     }
 }
 
-fn camera_zoom_from_scroll(current: f64, vertical_scroll: f64) -> f64 {
+pub(crate) fn camera_zoom_from_scroll(current: f64, vertical_scroll: f64) -> f64 {
     (current * (-vertical_scroll * CAMERA_WHEEL_ZOOM_SENSITIVITY).exp())
         .clamp(CAMERA_WHEEL_ZOOM_MIN, 1.0)
 }
@@ -2399,6 +2391,17 @@ mod edge_tests {
         let closer = camera_zoom_from_scroll(farther, -30.0);
         assert_eq!(closer, 1.0);
         assert_eq!(camera_zoom_from_scroll(0.1, 1000.0), 0.1);
+    }
+
+    #[test]
+    fn batched_wheel_zoom_matches_sequential_wheel_events() {
+        let sequential = camera_zoom_from_scroll(
+            camera_zoom_from_scroll(camera_zoom_from_scroll(1.0, 5.0), 4.0),
+            6.0,
+        );
+        let batched = camera_zoom_from_scroll(1.0, 15.0);
+
+        assert!((sequential - batched).abs() < f64::EPSILON);
     }
 
     #[test]

@@ -176,6 +176,10 @@ pub struct MioState {
     pub config: ConfigManager,
     pub(crate) config_error: Option<String>,
     pub(crate) pending_camera_drag: Option<PendingCameraDrag>,
+    /// RMB-wheel Camera zoom accumulated until the next rendered frame.
+    /// This avoids recalculating every intermediate layout when libinput
+    /// delivers several wheel events before DRM can present another frame.
+    pub(crate) pending_camera_zoom_scroll: f64,
     pub(crate) pending_window_drag: Option<PendingWindowDrag>,
     pub(crate) pending_window_resize: Option<PendingWindowResize>,
     pub(crate) pending_floating_chord: Option<PendingFloatingChord>,
@@ -890,6 +894,7 @@ impl MioState {
             config,
             config_error: None,
             pending_camera_drag: None,
+            pending_camera_zoom_scroll: 0.0,
             pending_window_drag: None,
             pending_window_resize: None,
             pending_floating_chord: None,
@@ -1927,6 +1932,23 @@ impl MioState {
 
     #[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
     pub fn advance_animations(&mut self, now: Instant) -> bool {
+        let pending_zoom_scroll = std::mem::take(&mut self.pending_camera_zoom_scroll);
+        if pending_zoom_scroll != 0.0 {
+            let current = self.world.camera().zoom();
+            let target = crate::input::camera_zoom_from_scroll(current, pending_zoom_scroll);
+            match self.world.apply(Action::CameraZoom(target)) {
+                Ok(_) => {
+                    tracing::debug!(
+                        current,
+                        target,
+                        vertical = pending_zoom_scroll,
+                        "mouse Camera zoom"
+                    );
+                    self.sync_layout(false);
+                }
+                Err(error) => tracing::debug!(%error, "mouse Camera zoom rejected"),
+            }
+        }
         let seconds = now
             .saturating_duration_since(self.last_animation_frame)
             .as_secs_f64()
