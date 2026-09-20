@@ -257,7 +257,6 @@ impl MioState {
             effects.cursor_wake_threshold,
         );
         let under = self.surface_under(position);
-        self.trace_pointer_mapping("motion", position, pointer.current_focus().as_ref());
         pointer.motion(
             self,
             under.clone(),
@@ -795,13 +794,6 @@ impl MioState {
             .seat
             .get_pointer()
             .expect("Mio always creates a pointer");
-        if event.state() == ButtonState::Pressed {
-            self.trace_pointer_mapping(
-                "button",
-                pointer.current_location(),
-                pointer.current_focus().as_ref(),
-            );
-        }
         if event.state() == ButtonState::Pressed
             && self.pending_pointer_click.is_some_and(|click| {
                 event.button_code() != click.button || Instant::now() > click.deadline || {
@@ -1035,6 +1027,20 @@ impl MioState {
             return;
         }
 
+        // Camera zoom changes the mapping between the global pointer and client-local
+        // coordinates even when the pointer itself has not moved. Refresh the focus
+        // origin immediately before forwarding a button so the click never uses the
+        // pre-zoom mapping retained by Smithay.
+        let position = pointer.current_location();
+        pointer.motion(
+            self,
+            self.surface_under(position),
+            &MotionEvent {
+                location: position,
+                serial,
+                time: event.time_msec(),
+            },
+        );
         pointer.button(
             self,
             &ButtonEvent {
@@ -1045,51 +1051,6 @@ impl MioState {
             },
         );
         pointer.frame(self);
-    }
-
-    fn trace_pointer_mapping(
-        &self,
-        phase: &'static str,
-        position: smithay::utils::Point<f64, smithay::utils::Logical>,
-        pointer_focus: Option<&WlSurface>,
-    ) {
-        let Some((surface, origin)) = self.surface_under(position) else {
-            debug!(
-                target: "mio_compositor::diagnostics",
-                phase,
-                global_x = position.x,
-                global_y = position.y,
-                "pointer coordinate mapping has no surface"
-            );
-            return;
-        };
-        let local = position - origin;
-        let window_id = self.window_id_for_surface(&surface);
-        let (scale, mapped_location, geometry) = window_id
-            .and_then(|id| self.managed_window(id))
-            .map_or((None, None, None), |managed| {
-                (
-                    Some(managed.window.scale()),
-                    self.space.element_location(&managed.window),
-                    self.space.element_geometry(&managed.window),
-                )
-            });
-        debug!(
-            target: "mio_compositor::diagnostics",
-            phase,
-            global_x = position.x,
-            global_y = position.y,
-            origin_x = origin.x,
-            origin_y = origin.y,
-            local_x = local.x,
-            local_y = local.y,
-            ?window_id,
-            focus_matches_hit = pointer_focus.is_some_and(|focus| focus == &surface),
-            ?scale,
-            ?mapped_location,
-            ?geometry,
-            "pointer coordinate mapping"
-        );
     }
 
     fn begin_window_drag(

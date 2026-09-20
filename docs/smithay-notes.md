@@ -245,11 +245,13 @@ logic or persist a layout group.
   cuts menus off at the resized parent Window boundary. Popup placement and clipping
   remain protocol/render concerns and do not add Window state to Core.
 - `Window::surface_under` returns its surface offset in the unscaled Window-local
-  coordinate space. When Mio presents a Window through `RescaleRenderElement`, the
-  offset from the pointer to that surface must be multiplied by the same presentation
-  scale before deriving the global pointer-focus origin. Mixing unscaled local deltas
-  with screen coordinates makes visible popup regions receive out-of-bounds local
-  coordinates after an interactive resize.
+  coordinate space. Mio first inverts the presentation scale to obtain that local
+  coordinate. Smithay then derives the Wayland pointer coordinate only by subtracting
+  the supplied focus origin from the global pointer position, so the local delta must
+  remain unscaled when deriving that origin. Scaling it a second time makes clicks
+  drift toward the surface's upper-left as Camera zoom decreases. A button event has
+  no coordinate of its own, so Mio also refreshes pointer motion immediately before
+  forwarding a button in case Camera zoom changed while the pointer stayed still.
 - A normal Window's visual gap must be scaled by the Camera zoom before deriving its
   presented rectangle, while its normal client configure keeps the unzoomed gap. This
   keeps the `RenderWindow` scale equal to the Camera scale, so Smithay's tracked popup

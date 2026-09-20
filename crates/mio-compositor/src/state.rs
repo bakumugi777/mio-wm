@@ -766,14 +766,18 @@ const fn should_round_surface_element(is_popup: bool, rounding_active: bool) -> 
     rounding_active && !is_popup
 }
 
-fn scaled_surface_origin(
+fn surface_focus_origin(
     position: Point<f64, Logical>,
     window_local: Point<f64, Logical>,
     surface_offset: Point<i32, Logical>,
-    scale: Scale<f64>,
 ) -> Point<f64, Logical> {
     let surface_local = window_local - surface_offset.to_f64();
-    position - surface_local.upscale(scale)
+    // Smithay derives the Wayland event coordinate only by subtracting this
+    // origin from the global pointer position. `window_local` has already had
+    // Mio's presentation scale inverted, so keep that client-local coordinate
+    // unscaled here. Scaling it again would make clicks drift toward the
+    // surface origin as Camera zoom decreases.
+    position - surface_local
 }
 
 impl MioState {
@@ -1103,7 +1107,7 @@ impl MioState {
                             (position - location.to_f64()).upscale((1.0 / scale.x, 1.0 / scale.y));
                         window.surface_under(local, WindowSurfaceType::ALL).map(
                             |(surface, offset)| {
-                                let origin = scaled_surface_origin(position, local, offset, scale);
+                                let origin = surface_focus_origin(position, local, offset);
                                 (surface, origin)
                             },
                         )
@@ -2381,8 +2385,8 @@ mod tests {
         apply_window_gaps, camera_should_follow_on_activation, floating_z_index,
         focus_indicator_reveal, merge_focus_candidates, presentation_screen_rect,
         presented_corner_radius, record_initial_client_size, render_scale_for_committed_size,
-        restore_preferred_focus, scaled_surface_origin, should_round_surface_element,
-        split_output_area, undistorted_resize_scale, window_removal_changes_focus,
+        restore_preferred_focus, should_round_surface_element, split_output_area,
+        surface_focus_origin, undistorted_resize_scale, window_removal_changes_focus,
         window_transition_speed, CameraFollowPolicy, ScreenRect,
     };
 
@@ -2394,18 +2398,13 @@ mod tests {
     }
 
     #[test]
-    fn pointer_surface_origin_applies_the_window_presentation_scale() {
+    fn pointer_surface_origin_keeps_client_coordinates_unscaled() {
         let position = Point::<f64, Logical>::from((500.0, 300.0));
         let window_local = Point::<f64, Logical>::from((200.0, 100.0));
         let popup_offset = Point::<i32, Logical>::from((160, 80));
         assert_eq!(
-            scaled_surface_origin(
-                position,
-                window_local,
-                popup_offset,
-                Scale::from((0.5, 0.5)),
-            ),
-            Point::from((480.0, 290.0))
+            surface_focus_origin(position, window_local, popup_offset),
+            Point::from((460.0, 280.0))
         );
     }
 
