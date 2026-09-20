@@ -1429,7 +1429,8 @@ impl DirectBackend {
                     self.repaint_scheduled = true;
                 }
                 let frame = cursor.frame(cursor_elapsed);
-                let (cursor_size, hotspot) = software_cursor_geometry(frame, self.cursor_size);
+                let (cursor_source, cursor_size, hotspot) =
+                    software_cursor_geometry(frame, self.cursor_size);
                 let location =
                     software_cursor_physical_location(pointer_location, hotspot, output_scale);
                 match MemoryRenderBufferRenderElement::from_buffer(
@@ -1437,7 +1438,7 @@ impl DirectBackend {
                     location.to_f64(),
                     &frame.buffer,
                     None,
-                    None,
+                    Some(cursor_source),
                     Some(cursor_size),
                     Kind::Cursor,
                 ) {
@@ -1578,10 +1579,15 @@ impl DirectBackend {
 fn software_cursor_geometry(
     frame: &SoftwareCursorFrame,
     requested_size: u32,
-) -> (Size<i32, Logical>, Point<i32, Logical>) {
+) -> (
+    Rectangle<f64, Logical>,
+    Size<i32, Logical>,
+    Point<i32, Logical>,
+) {
     let scale = f64::from(requested_size) / f64::from(frame.nominal_size.max(1));
     let scale_value = |value: i32| (f64::from(value) * scale).round() as i32;
     (
+        Rectangle::from_size(frame.source_size.to_f64()),
         Size::from((
             scale_value(frame.source_size.w).max(1),
             scale_value(frame.source_size.h).max(1),
@@ -1665,7 +1671,7 @@ mod tests {
         HotplugAction, HotplugEventKind, MemoryRenderBuffer, SoftwareCursorFrame, Transform,
     };
     use smithay::backend::renderer::element::Element;
-    use smithay::utils::{Logical, Physical, Point, Size};
+    use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
     #[test]
     fn closing_visual_progress_runs_backwards_and_clamps() {
@@ -1777,7 +1783,11 @@ mod tests {
 
         assert_eq!(
             software_cursor_geometry(&frame, 24),
-            (Size::from((24, 24)), Point::from((4, 6)))
+            (
+                Rectangle::from_size(Size::from((36.0, 36.0))),
+                Size::from((24, 24)),
+                Point::from((4, 6))
+            )
         );
     }
 }
