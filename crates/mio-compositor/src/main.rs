@@ -137,6 +137,13 @@ fn run() -> MainResult {
             TimeoutAction::ToDuration(std::time::Duration::from_secs(1))
         },
     )?;
+    event_loop.handle().insert_source(
+        Timer::from_duration(std::time::Duration::from_millis(50)),
+        |_, &mut (), data| {
+            data.state.poll_cursor_idle(std::time::Instant::now());
+            TimeoutAction::ToDuration(std::time::Duration::from_millis(50))
+        },
+    )?;
     info!(
         project = mio_core::PROJECT_NAME,
         socket = ?data.state.socket_name,

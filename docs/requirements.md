@@ -662,6 +662,8 @@ session lockおよびexclusive layer-shellの入力規則はshortcut inhibitor�
 
 `wp_fractional_scale_manager_v1`を提供し、surfaceへOutput由来のpreferred scaleを通知する
 こと。Fractional output scaleとCamera zoomおよび整数World Gridを混同しないこと。
+Output scaleはKDLから`0.5..=4.0`の範囲で指定でき、設定再読み込み時には既存Outputへ
+適用すること。
 
 ---
 
@@ -717,6 +719,9 @@ Windowの吸着、Camera移動、Camera zoomの描画補間は静止状態から
 ## FR-ANI-004
 
 Animation速度を設定可能にすること。
+
+Pointer cursorは設定可能な無操作時間の後、およびキー入力時に非表示にできること。
+Pointer操作時にはclient指定のcursor形状を保ったまま再表示すること。
 
 ---
 
@@ -971,6 +976,7 @@ Mioは外部設定ファイルを持たなければならない。
 設定ファイルから最低限以下を変更可能にする。
 
 - keybind
+- output scale
 - focus indicator
 - focus indicator color
 - focus indicator width / height

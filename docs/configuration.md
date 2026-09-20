@@ -17,6 +17,7 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 
 | Node | 内容 |
 |---|---|
+| `output { scale NUMBER }` | Wayland Outputのscale。`0.5..=4.0`、既定値`1.0` |
 | `appearance { ... }` | Windowと背景の外観 |
 | `effects { ... }` | blur、shadow、航跡、開閉transition |
 | `animation { speed NUMBER }` | animation全体の速度。`0`で無効 |
@@ -31,6 +32,17 @@ cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 | `window-rule { ... }` | Window Propertyの設定rule |
 
 未知のnodeやoptionはerrorになる。
+
+## Output
+
+文字、UI、cursorなどの基準となるWayland Output scaleを指定する。Camera zoomとは別の設定で、
+fractional scaleも利用できる。設定再読み込み時にも既存Outputへ反映される。
+
+```kdl
+output {
+    scale 1.25
+}
+```
 
 ## Include
 

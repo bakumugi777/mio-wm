@@ -5,6 +5,11 @@
 spawn-at-startup "waybar"
 // spawn-at-startup "kaname" "--applications"
 
+output {
+    // Wayland output scale. Fractional values such as 1.25 are supported.
+    scale 1.0
+}
+
 appearance {
     background-color "#FFFFFF"
     window-border-width 1
@@ -58,6 +63,8 @@ placement {
 
 // Mouse chords are ordered: hold the first button, then press the next one.
 mouse {
+    // Hide after this many milliseconds without pointer activity; zero disables it.
+    cursor-hide-delay-ms 3000
     camera-pan "right"
     camera-zoom "right"
     move-window "right" "left"

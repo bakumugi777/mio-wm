@@ -183,10 +183,7 @@ mod tests {
             previous = value.current;
         }
 
-        let peak = frame_distances
-            .iter()
-            .copied()
-            .fold(0.0_f64, f64::max);
+        let peak = frame_distances.iter().copied().fold(0.0_f64, f64::max);
         assert!(frame_distances[0] < peak);
         assert!(frame_distances[30] < peak);
         assert!((value.current - 100.0).abs() < f64::EPSILON);

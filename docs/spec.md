@@ -545,6 +545,10 @@ screen_y = (world_y - camera_y) * zoom
 
 重要なのは、World座標とrender座標を分離すること。
 
+Wayland OutputのscaleはKDLの`output { scale NUMBER }`で指定し、built-in defaultは
+`1.0`、有効範囲は`0.5..=4.0`とする。これはclientへ通知するlogical/physical pixel比であり、
+Camera zoomやWorld Gridの大きさとして扱わない。設定reload時は既存Outputへ反映する。
+
 ## Screen capture
 
 Smithayの`ImageCopyCaptureState`、`ImageCaptureSourceState`、
@@ -571,6 +575,10 @@ capture用sceneはpointer overlayを含めず、`overlay_cursor`による追加�
 CameraおよびWindowの論理状態と、アニメーション中の描画状態を分離する。
 Windowの吸着、Camera移動、Camera zoomには速度を保持する臨界減衰型の描画補間を使う。
 開始直後と終点付近を遅くし、途中で目標が変わった場合も現在速度を維持する。
+
+`mouse.cursor-hide-delay-ms`が0より大きい場合、Pointer操作がない状態で指定時間が
+経過するとcursorを隠す。キー入力時は直ちに隠し、次のPointer移動・button・axis操作で
+clientが指定していたcursor形状を再表示する。0は無操作時間による非表示だけを無効にする。
 
 例：
 

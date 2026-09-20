@@ -188,6 +188,8 @@ pub struct MioState {
     pub(crate) suppressed_focus_click: bool,
     pub cursor_image_status: CursorImageStatus,
     pub(crate) cursor_override: Option<CursorIcon>,
+    pub(crate) cursor_hidden_by_activity: bool,
+    pub(crate) last_pointer_activity: Instant,
     pub(crate) dnd_icon: Option<DndIcon>,
     pub(crate) last_host_pointer_position: Option<Point<f64, Logical>>,
     pub(crate) cursor_wake: CursorWakeTrail,
@@ -900,6 +902,8 @@ impl MioState {
             suppressed_focus_click: false,
             cursor_image_status: CursorImageStatus::default_named(),
             cursor_override: None,
+            cursor_hidden_by_activity: false,
+            last_pointer_activity: Instant::now(),
             dnd_icon: None,
             last_host_pointer_position: None,
             cursor_wake: CursorWakeTrail::default(),
@@ -923,6 +927,51 @@ impl MioState {
 
     pub(crate) fn spawn_command(&mut self, argv: &[String]) {
         self.spawn_os_command(argv.iter().map(std::ffi::OsString::from));
+    }
+
+    pub(crate) fn effective_cursor_status(&self) -> CursorImageStatus {
+        if self.cursor_hidden_by_activity {
+            CursorImageStatus::Hidden
+        } else {
+            self.cursor_override.map_or_else(
+                || self.cursor_image_status.clone(),
+                CursorImageStatus::Named,
+            )
+        }
+    }
+
+    pub(crate) fn note_pointer_activity(&mut self) {
+        self.last_pointer_activity = Instant::now();
+        if self.cursor_hidden_by_activity {
+            self.cursor_hidden_by_activity = false;
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn hide_cursor_for_keyboard_input(&mut self) {
+        if !self.cursor_hidden_by_activity {
+            self.cursor_hidden_by_activity = true;
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn poll_cursor_idle(&mut self, now: Instant) {
+        let delay_ms = self.config.config().mouse.cursor_hide_delay_ms;
+        if delay_ms == 0 || self.cursor_hidden_by_activity {
+            return;
+        }
+        if now.saturating_duration_since(self.last_pointer_activity)
+            >= std::time::Duration::from_millis(u64::from(delay_ms))
+        {
+            self.cursor_hidden_by_activity = true;
+            self.request_redraw();
+        }
+    }
+
+    fn request_redraw(&self) {
+        if let Some(sender) = &self.redraw_sender {
+            let _ = sender.send(());
+        }
     }
 
     fn spawn_os_command(&mut self, argv: impl IntoIterator<Item = std::ffi::OsString>) {
@@ -1559,6 +1608,31 @@ impl MioState {
 
     pub(crate) fn register_output(&mut self, id: OutputId, output: smithay::output::Output) {
         self.outputs.insert(id, output);
+    }
+
+    pub(crate) fn apply_output_scale(&mut self) {
+        let scale = self.config.config().output.scale;
+        let mut x = 0;
+        let outputs = self.outputs.values().cloned().collect::<Vec<_>>();
+        let mut height = 0;
+        for output in outputs {
+            output.change_current_state(
+                None,
+                None,
+                Some(smithay::output::Scale::Fractional(scale)),
+                Some((x, 0).into()),
+            );
+            self.space.map_output(&output, (x, 0));
+            layer_map_for_output(&output).arrange();
+            if let Some(geometry) = self.space.output_geometry(&output) {
+                x += geometry.size.w;
+                height = height.max(geometry.size.h);
+            }
+        }
+        self.space.refresh();
+        if x > 0 && height > 0 {
+            self.set_output_size(x, height);
+        }
     }
 
     pub fn sync_layout(&mut self, configure_sizes: bool) {

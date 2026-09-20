@@ -76,8 +76,14 @@ impl MioState {
             InputEvent::PointerMotion { event, .. } => {
                 self.process_pointer_motion_relative::<I>(&event);
             }
-            InputEvent::PointerButton { event, .. } => self.process_pointer_button(&event),
-            InputEvent::PointerAxis { event, .. } => self.process_pointer_axis(&event),
+            InputEvent::PointerButton { event, .. } => {
+                self.note_pointer_activity();
+                self.process_pointer_button(&event);
+            }
+            InputEvent::PointerAxis { event, .. } => {
+                self.note_pointer_activity();
+                self.process_pointer_axis(&event);
+            }
             InputEvent::TouchDown { event } => self.process_touch_down::<I>(&event),
             InputEvent::TouchUp { event } => self.process_touch_up::<I>(&event),
             InputEvent::TouchMotion { event } => self.process_touch_motion::<I>(&event),
@@ -97,6 +103,7 @@ impl MioState {
     }
 
     fn process_pointer_motion_relative<B: InputBackend>(&mut self, event: &B::PointerMotionEvent) {
+        self.note_pointer_activity();
         let Some(output) = self.space.outputs().next() else {
             return;
         };
@@ -129,6 +136,7 @@ impl MioState {
         &mut self,
         event: &B::PointerMotionAbsoluteEvent,
     ) {
+        self.note_pointer_activity();
         let Some(output) = self.space.outputs().next() else {
             return;
         };
@@ -322,6 +330,9 @@ impl MioState {
         let serial = SERIAL_COUNTER.next_serial();
         let time = event.time_msec();
         let key_state = event.state();
+        if key_state == KeyState::Pressed {
+            self.hide_cursor_for_keyboard_input();
+        }
         if self.session_locked {
             if let Some(keyboard) = self.seat.get_keyboard() {
                 keyboard.input::<(), _>(
@@ -603,6 +614,7 @@ impl MioState {
                     if let Err(error) = self.world.resize_camera_viewport(viewport) {
                         warn!(%error, "new viewport rejected after configuration reload");
                     }
+                    self.apply_output_scale();
                     self.reapply_window_rules();
                     self.sync_layout(true);
                     info!(path = %self.config.display_path(), "configuration reloaded");

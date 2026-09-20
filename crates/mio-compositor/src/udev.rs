@@ -50,7 +50,7 @@ use smithay::{
         LayerSurface,
     },
     input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData},
-    output::{Mode, Output, PhysicalProperties},
+    output::{Mode, Output, PhysicalProperties, Scale as OutputScale},
     reexports::{
         calloop::{
             channel,
@@ -865,6 +865,7 @@ fn closing_visual_progress(elapsed: Duration, duration: Duration) -> f32 {
 
 fn create_output(
     connector: &connector::Info,
+    scale: f64,
 ) -> Result<(Output, usize), Box<dyn std::error::Error>> {
     let (mode, drm_mode) =
         preferred_connector_mode(connector).ok_or("connected DRM connector exposes no modes")?;
@@ -888,7 +889,7 @@ fn create_output(
             serial_number: String::new(),
         },
     );
-    configure_output_mode(&output, drm_mode);
+    configure_output_mode(&output, drm_mode, scale);
     Ok((output, mode))
 }
 
@@ -907,7 +908,11 @@ fn preferred_connector_mode(
         .map(|mode| (index, mode))
 }
 
-fn configure_output_mode(output: &Output, drm_mode: smithay::reexports::drm::control::Mode) {
+fn configure_output_mode(
+    output: &Output,
+    drm_mode: smithay::reexports::drm::control::Mode,
+    scale: f64,
+) {
     let wl_mode = Mode::from(drm_mode);
     info!(
         output = %output.name(),
@@ -920,7 +925,7 @@ fn configure_output_mode(output: &Output, drm_mode: smithay::reexports::drm::con
     output.change_current_state(
         Some(wl_mode),
         Some(Transform::Normal),
-        None,
+        Some(OutputScale::Fractional(scale)),
         Some((0, 0).into()),
     );
 }
@@ -1028,7 +1033,8 @@ impl DirectBackend {
             warn!(connector = %connector.interface().as_str(), "connected DRM connector exposes no modes");
             return;
         };
-        let (output, _) = match create_output(connector) {
+        let scale = data.state.config.config().output.scale;
+        let (output, _) = match create_output(connector, scale) {
             Ok(output) => output,
             Err(error) => {
                 error!(%error, "failed to create connected DRM output");
@@ -1068,7 +1074,7 @@ impl DirectBackend {
         data.state.register_output(output_id, output.clone());
         smithay::desktop::layer_map_for_output(&output).arrange();
         let mode = Mode::from(drm_mode);
-        data.state.set_output_size(mode.size.w, mode.size.h);
+        data.state.apply_output_scale();
         data.state.launch_pending_startup_commands_if_output_ready();
         self.repaint_scheduled = true;
         info!(output = %output.name(), width = mode.size.w, height = mode.size.h, "DRM output connected");
@@ -1335,10 +1341,7 @@ impl DirectBackend {
             .get_pointer()
             .expect("Mio always creates a pointer");
         let pointer_location = pointer.current_location();
-        let cursor_status = state.cursor_override.map_or_else(
-            || state.cursor_image_status.clone(),
-            CursorImageStatus::Named,
-        );
+        let cursor_status = state.effective_cursor_status();
         match cursor_status {
             CursorImageStatus::Surface(surface) if surface.alive() => {
                 self.cursor_animation = None;

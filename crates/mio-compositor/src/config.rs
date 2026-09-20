@@ -13,6 +13,7 @@ use xkbcommon::xkb;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
+    pub output: OutputConfig,
     pub appearance: Appearance,
     pub effects: Effects,
     pub animation_speed: f64,
@@ -28,6 +29,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            output: OutputConfig::default(),
             appearance: Appearance::default(),
             effects: Effects::default(),
             animation_speed: 1.0,
@@ -45,6 +47,17 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OutputConfig {
+    pub scale: f64,
+}
+
+impl Default for OutputConfig {
+    fn default() -> Self {
+        Self { scale: 1.0 }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MouseButton {
     Left,
@@ -54,6 +67,8 @@ pub enum MouseButton {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MouseConfig {
+    /// Milliseconds of pointer inactivity before hiding it. Zero disables it.
+    pub cursor_hide_delay_ms: u32,
     pub camera_pan: MouseButton,
     pub camera_zoom: MouseButton,
     /// Ordered chord: hold the first button, then press the second.
@@ -75,6 +90,7 @@ pub struct MouseConfig {
 impl Default for MouseConfig {
     fn default() -> Self {
         Self {
+            cursor_hide_delay_ms: 0,
             camera_pan: MouseButton::Right,
             camera_zoom: MouseButton::Right,
             move_window: [MouseButton::Right, MouseButton::Left],
@@ -462,6 +478,7 @@ fn parse_nodes<'a>(
         }
         let result = (|| -> Result<(), ConfigError> {
             match node.name().value() {
+                "output" => parse_output(node, &mut config.output)?,
                 "appearance" => parse_appearance(node, &mut config.appearance)?,
                 "effects" => parse_effects(node, &mut config.effects)?,
                 "animation" => config.animation_speed = child_number(node, "speed")?,
@@ -545,6 +562,10 @@ fn parse_mouse(node: &KdlNode, mouse: &mut MouseConfig) -> Result<(), ConfigErro
     let children = required_children(node)?;
     for child in children.nodes() {
         match child.name().value() {
+            "cursor-hide-delay-ms" => {
+                mouse.cursor_hide_delay_ms = u32::try_from(node_u64_at(child, 0)?)
+                    .map_err(|_| ConfigError::new("mouse cursor-hide-delay-ms is too large"))?;
+            }
             "camera-pan" => mouse.camera_pan = node_mouse_button_at(child, 0)?,
             "camera-zoom" => mouse.camera_zoom = node_mouse_button_at(child, 0)?,
             "move-window" => {
@@ -586,6 +607,25 @@ fn parse_mouse(node: &KdlNode, mouse: &mut MouseConfig) -> Result<(), ConfigErro
         }
     }
     validate_mouse(mouse)
+}
+
+fn parse_output(node: &KdlNode, output: &mut OutputConfig) -> Result<(), ConfigError> {
+    let children = required_children(node)?;
+    let mut saw_scale = false;
+    for child in children.nodes() {
+        match child.name().value() {
+            "scale" if !saw_scale => {
+                output.scale = node_number_at(child, 0)?;
+                saw_scale = true;
+            }
+            "scale" => return Err(ConfigError::new("duplicate output option `scale`")),
+            name => return Err(ConfigError::new(format!("unknown output option `{name}`"))),
+        }
+    }
+    if !saw_scale {
+        return Err(ConfigError::new("`output` requires `scale`"));
+    }
+    Ok(())
 }
 
 fn node_mouse_button_at(node: &KdlNode, index: usize) -> Result<MouseButton, ConfigError> {
@@ -979,6 +1019,9 @@ fn node_window_transition(node: &KdlNode) -> Result<WindowTransitionEffect, Conf
 }
 
 fn validate(config: &Config) -> Result<(), ConfigError> {
+    if !config.output.scale.is_finite() || !(0.5..=4.0).contains(&config.output.scale) {
+        return Err(ConfigError::new("output scale must be between 0.5 and 4.0"));
+    }
     if !(0.0..=1.0).contains(&config.appearance.opacity) {
         return Err(ConfigError::new(
             "appearance opacity must be between 0 and 1",
@@ -1455,6 +1498,7 @@ mod tests {
     #[test]
     fn defaults_new_windows_to_the_full_viewport() {
         let config = Config::default();
+        assert!((config.output.scale - 1.0).abs() < f64::EPSILON);
         assert_eq!(config.initial_window_size, config.viewport);
         assert_eq!(config.viewport, GridSize::new(8, 8).unwrap());
         assert_eq!(config.appearance.gaps, 24);
@@ -1482,6 +1526,9 @@ mod tests {
     fn parses_complete_configuration() {
         let config = parse(
             r##"
+            output {
+                scale 1.25
+            }
             appearance {
                 background-color "#102030ff"
                 window-border-width 2
@@ -1518,6 +1565,7 @@ mod tests {
                 initial-size 2 1
             }
             mouse {
+                cursor-hide-delay-ms 2500
                 camera-pan "middle"
                 camera-zoom "middle"
                 move-window "middle" "right"
@@ -1541,6 +1589,7 @@ mod tests {
         "##,
         )
         .unwrap();
+        assert!((config.output.scale - 1.25).abs() < f64::EPSILON);
         assert_eq!(config.appearance.focus_indicator_width, 80);
         assert_eq!(config.appearance.focus_indicator_height, 2);
         assert_eq!(
@@ -1590,6 +1639,7 @@ mod tests {
         assert_eq!(config.viewport, GridSize::new(5, 3).unwrap());
         assert_eq!(config.edge_commands.len(), 1);
         assert_eq!(config.mouse.camera_pan, MouseButton::Middle);
+        assert_eq!(config.mouse.cursor_hide_delay_ms, 2500);
         assert_eq!(config.mouse.reset_window_clicks, 2);
         assert_eq!(
             config.mouse.move_window,
@@ -1615,6 +1665,9 @@ mod tests {
     #[test]
     fn rejects_invalid_values_and_duplicate_bindings() {
         assert!(parse("appearance {\n opacity 1.2\n}").is_err());
+        assert!(parse("output {\n scale 0.0\n}").is_err());
+        assert!(parse("output {\n scale 4.1\n}").is_err());
+        assert!(parse("output {\n unknown 1.0\n}").is_err());
         assert!(parse("appearance {\n opacity-toggle 1.0 1.0\n}").is_err());
         assert!(parse("appearance {\n opacity-toggle 1.0 1.2\n}").is_err());
         assert!(parse("appearance {\n gaps 4097\n}").is_err());

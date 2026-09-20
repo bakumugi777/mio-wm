@@ -41,7 +41,7 @@ use smithay::{
         LayerSurface,
     },
     input::pointer::{CursorImageStatus, CursorImageSurfaceData},
-    output::{Mode, Output, PhysicalProperties, Subpixel},
+    output::{Mode, Output, PhysicalProperties, Scale as OutputScale, Subpixel},
     reexports::{
         calloop::{channel, EventLoop},
         wayland_protocols::wp::presentation_time::server::wp_presentation_feedback,
@@ -247,6 +247,8 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
     let mut outputs = Vec::new();
+    let output_scale = data.state.config.config().output.scale;
+    let mut logical_x = 0;
     for (index, (id, region)) in output_ids
         .into_iter()
         .zip(output_regions(size, data.state.virtual_output_count()))
@@ -270,15 +272,19 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
         output.change_current_state(
             Some(mode),
             Some(Transform::Flipped180),
-            None,
-            Some(region.loc),
+            Some(OutputScale::Fractional(output_scale)),
+            Some((logical_x, 0).into()),
         );
         output.set_preferred(mode);
-        data.state.space.map_output(&output, region.loc);
+        data.state.space.map_output(&output, (logical_x, 0));
+        logical_x += output
+            .current_mode()
+            .map(|mode| (f64::from(mode.size.w) / output_scale).round() as i32)
+            .unwrap_or_default();
         data.state.register_output(id, output.clone());
         outputs.push(output);
     }
-    data.state.set_output_size(size.w, size.h);
+    data.state.apply_output_scale();
 
     let primary_output = outputs
         .first()
@@ -302,6 +308,8 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
             let state = &mut data.state;
             match event {
                 WinitEvent::Resized { size, .. } => {
+                    let output_scale = state.config.config().output.scale;
+                    let mut logical_x = 0;
                     for (output, region) in outputs.iter().zip(output_regions(size, outputs.len()))
                     {
                         output.change_current_state(
@@ -310,13 +318,14 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                                 refresh: 60_000,
                             }),
                             None,
-                            None,
-                            Some(region.loc),
+                            Some(OutputScale::Fractional(output_scale)),
+                            Some((logical_x, 0).into()),
                         );
-                        state.space.map_output(output, region.loc);
+                        state.space.map_output(output, (logical_x, 0));
                         layer_map_for_output(output).arrange();
+                        logical_x += (f64::from(region.size.w) / output_scale).round() as i32;
                     }
-                    state.set_output_size(size.w, size.h);
+                    state.apply_output_scale();
                 }
                 WinitEvent::Input(event) => {
                     let _ = state.process_input_event(event);
@@ -348,9 +357,7 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                     {
                         state.dnd_icon = None;
                     }
-                    let cursor_status = state
-                        .cursor_override
-                        .map_or_else(|| state.cursor_image_status.clone(), CursorImageStatus::Named);
+                    let cursor_status = state.effective_cursor_status();
                     apply_host_cursor(backend.window(), &cursor_status);
                     let size = backend.window_size();
                     let damage = Rectangle::from_size(size);
@@ -899,10 +906,11 @@ where
         .expect("Mio always creates a pointer");
     let pointer_location = pointer.current_location();
     let mut elements = Vec::<WaylandSurfaceRenderElement<R>>::new();
+    let effective_cursor = state.effective_cursor_status();
     if let Some(surface) = state
         .cursor_override
         .is_none()
-        .then_some(&state.cursor_image_status)
+        .then_some(&effective_cursor)
         .and_then(|status| match status {
             CursorImageStatus::Surface(surface) => Some(surface),
             _ => None,
