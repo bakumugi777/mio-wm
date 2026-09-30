@@ -1,28 +1,24 @@
-# Window RuleとPropertyリファレンス
+# Window Rules and Properties
 
-MioはWindowの挙動と外観を、一つのProperty systemで扱う。現在利用できるPropertyは
-`opacity`、`floating`、`blur`である。
+[日本語版](window-properties-jp.md)
 
-## 実効値の優先順位
+Mio uses one Property system for Window behavior and appearance. The currently available Properties are `opacity`, `floating`, and `blur`.
 
-各Propertyは独立に、次の順で実効値を決める。
+## Effective-value precedence
+
+Each Property independently resolves its effective value in this order:
 
 ```text
 Default < Matched Config Rules < Runtime Override
 ```
 
-上位層にそのPropertyの値がなければ、直下の層へ戻る。runtime overrideをclearすると
-一致中のConfig Ruleの値へ戻り、Config RuleにもなければDefaultへ戻る。
-opacityのDefault層は`appearance.opacity`で設定する。これはWindowだけへ適用され、背景や
-layer-shell surfaceを含むscene全体のalphaとしては扱わない。
+If a layer does not define that Property, resolution falls back to the layer below it. Clearing a runtime override restores the matching Config Rule value, or the Default if no rule defines it. The default opacity is configured with `appearance.opacity`. It applies only to Windows, not as alpha for the entire scene including the background and layer-shell surfaces.
 
-runtime overrideはWindow ID単位である。同じapp-idの別Windowへ波及せず、手書きのKDLも
-書き換えない。Windowが閉じられると、そのWindowのoverrideも寿命を終える。
+Runtime overrides are per Window ID. They do not affect other Windows with the same app ID and do not rewrite the handwritten KDL file. An override expires when its Window closes.
 
-## Ruleの一致
+## Rule matching
 
-`window-rule`は`app-id`、`title`の完全一致を使い、少なくとも一方が必要である。両方を
-指定した場合はAND条件になる。正規表現とglobは現在未対応である。
+A `window-rule` uses exact `app-id` and `title` matching and requires at least one of them. Specifying both creates an AND condition. Regular expressions and globs are not currently supported.
 
 ```kdl
 window-rule {
@@ -37,26 +33,16 @@ window-rule {
 }
 ```
 
-複数Ruleが一致した場合は、ファイルに書いた順にPropertyを合成する。同じPropertyを複数の
-一致Ruleが指定した場合だけ、後のRuleが上書きする。上の例で`foot`かつtitleが`main`なら、
-実効Config層は`opacity=1.0`と`blur=true`になる。
+When several rules match, their Properties are composed in file order. A later rule overrides only a Property also set by an earlier matching rule. In the example above, a `foot` Window titled `main` receives `opacity=1.0` and `blur=true` in the effective Config layer.
 
-app-idまたはtitleがclientによって変更された場合と、設定の再読み込みに成功した場合は、
-既存WindowのConfig Rule層を全て再計算する。この再計算で以前だけ一致していた値は残らない。
-runtime override層は保持され、そのPropertyについて引き続きConfig層より優先される。
+Mio recalculates the complete Config Rule layer for existing Windows when a client changes its app ID or title, and after a successful configuration reload. Values from rules that no longer match do not remain. Runtime overrides are retained and continue to take precedence for their respective Properties.
 
-## floating
+## Floating
 
-`floating=true`は同じWorld内でGrid衝突制約を緩めるPropertyである。別workspaceや別座標系へ
-Windowを移す機能ではない。runtimeで`floating=false`を指定すればConfig Ruleの`true`より
-優先され、clearすれば再びRuleの値へ戻る。
+`floating=true` relaxes Grid collision constraints within the same World. It does not move a Window to another workspace or coordinate system. A runtime `floating=false` overrides a Config Rule's `true`; clearing it restores the rule value.
 
-新規Windowが初回表示前にConfig Ruleによって`floating=true`になった場合は、起動直前に
-focusされていたWindowの位置へ重ねて配置する。これは初期配置だけに適用し、設定reloadや
-runtimeでのfloating切替によって既存Windowを移動しない。
+If a Config Rule makes a new Window floating before its first presentation, Mio initially places it over the Window that was focused immediately before launch. This applies only to initial placement: configuration reloads and runtime floating changes do not move existing Windows.
 
-## 設定再読み込み
+## Configuration reload
 
-`reload-config`は新しい設定全体の検証に成功してから置き換える。不正な設定なら直前の有効な
-設定とPropertyを維持する。成功時は既存WindowへRuleを再適用するが、起動時commandは
-再実行しない。
+`reload-config` replaces the configuration only after the entire new configuration validates successfully. An invalid configuration preserves the last valid configuration and Properties. A successful reload reapplies rules to existing Windows but does not rerun startup commands.

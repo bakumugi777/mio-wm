@@ -1,66 +1,55 @@
 # Troubleshooting
 
+[日本語版](troubleshooting-jp.md)
+
 ## `cargo: command not found`
 
-NixOSではrepository rootで先に`nix-shell`へ入る。Mioのnative library pathもこのshellで設定される。
+On NixOS, enter `nix-shell` from the repository root first. It also configures Mio's native-library paths.
 
-## `could not load libwayland.so`などの共有library error
+## Shared-library errors such as `could not load libwayland.so`
 
-NixOSで`target/debug/mio-compositor`を開発shell外から実行した可能性が高い。`nix-shell`内で
-起動する。別TTYでも同様に、repositoryへ移動してから`nix-shell`へ入る。
+You probably started `target/debug/mio-compositor` outside the Nix development shell. Enter `nix-shell` in the repository, including when using another TTY.
 
-## `failed to initialize Mio`、白画面、極端に重い
+## `failed to initialize Mio`, a white screen, or extreme slowness
 
-- nested検証では`WINIT_UNIX_BACKEND=wayland`を指定する
-- direct検証ではgraphical session内ではなくtext VTから`--backend udev`で起動する
-- 実際に新しいbinaryをbuildしているか確認する
-- `RUST_LOG=info`を付け、選択されたbackendとGPU rendererを確認する
+- use `WINIT_UNIX_BACKEND=wayland` for nested testing
+- launch the direct backend from a text VT with `--backend udev`, not from a graphical session
+- confirm that you built and started the new binary
+- use `RUST_LOG=info` and inspect the selected backend and GPU renderer
 
-Nestedとdirectは起動条件が異なる。direct用commandへ`WINIT_UNIX_BACKEND`を足してもdirect
-backendの問題は解決しない。
+Nested and direct modes have different startup requirements. Adding `WINIT_UNIX_BACKEND` to a direct-backend command does not fix direct-backend problems.
 
-## 設定変更が反映されない
+## Configuration changes are not applied
 
 ```sh
 cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 ```
 
-起動中は`reload-config`（標準では`Super+R`）を実行する。失敗時は直前の有効設定を維持し、
-画面とlogへ原因を出す。別pathで起動していないか、起動logの`configuration loaded path=...`も
-確認する。
+While Mio is running, invoke `reload-config` (`Super+R` by default). A failed reload preserves the last valid configuration and reports the cause on screen and in the log. Also check `configuration loaded path=...` in the startup log to ensure Mio is reading the expected path.
 
-## 子applicationに`Broken pipe`が出る
+## Child applications report `Broken pipe`
 
-Compositorを強制終了するとWayland socketが閉じるため、footやGTK applicationが
-`Broken pipe`を報告する。Mioが意図せずcrashしたのでなければclient側の原因ではない。
-通常終了にはMio内から`mioctl quit`を使う。
+Force-stopping the compositor closes its Wayland socket, so Foot and GTK applications may report `Broken pipe`. Unless Mio crashed unexpectedly, this is a consequence rather than a client-side cause. Exit normally with `mioctl quit` from inside Mio.
 
-## OBSの画面キャプチャが黒い、止まる、候補がない
+## OBS capture is black, frozen, or absent
 
-- `xdg-desktop-portal`と`xdg-desktop-portal-wlr`が導入済みか確認する
-- OS設定を変更した場合はuser serviceまたはsessionを再起動する
-- NixOS module経由のsessionでは、Mioが出力準備後にDBus環境を更新し、portalをMioの
-  Wayland socketへ再接続する。KDLへportal起動commandを追加する必要はない
-- `systemctl --user status xdg-desktop-portal.service xdg-desktop-portal-wlr.service`で、
-  両方がMioへのログイン後にactiveになっているか確認する
-- OBSの古いsourceを削除し、新しい「スクリーンキャプチャ」を作る
+- install `xdg-desktop-portal` and `xdg-desktop-portal-wlr`
+- restart the user services or session after changing system configuration
+- with the NixOS module, Mio updates the D-Bus environment and reconnects the portal after Outputs are ready; do not add portal startup commands to KDL
+- check `systemctl --user status xdg-desktop-portal.service xdg-desktop-portal-wlr.service` after logging into Mio
+- remove stale OBS sources and create a new **Screen Capture** source
 
-Mioは標準`ext-image-copy-capture-v1`を優先し、legacy `wlr-screencopy`も互換用に公開する。
-session lock中のcaptureは拒否される。
+Mio prefers the standard `ext-image-copy-capture-v1` protocol and exposes legacy `wlr-screencopy` for compatibility. Capture is rejected while the session is locked.
 
-## X11 applicationがdisplayを開けない
+## An X11 application cannot open the display
 
-`xwayland-satellite`を導入し、Mioを`--xwayland-satellite`付きで起動する。Mioが起動した
-applicationにだけ互換用`DISPLAY`が渡る。Mio外のshellから起動する場合は、そのMio sessionの
-環境を自動では継承しない。
+Install `xwayland-satellite` and start Mio with `--xwayland-satellite`. Only applications launched by Mio inherit the compatibility `DISPLAY`; a shell outside the Mio session does not inherit it automatically.
 
-## IMEが動かない
+## IME does not work
 
-Mioはtext-input/input-method/virtual-keyboard protocolを公開するが、fcitx5本体の起動、環境変数、
-addon設定はsession側の責任である。nested環境と正式なDE sessionでは条件が異なるため、現時点では
-統合検証が残っている。
+Mio exposes the text-input, input-method, and virtual-keyboard protocols. Starting Fcitx5, setting environment variables, and configuring add-ons remain session responsibilities. Nested and full desktop sessions have different environments.
 
-## 詳細log
+## Detailed logs
 
 ```sh
 WINIT_UNIX_BACKEND=wayland \
@@ -68,4 +57,4 @@ RUST_LOG=info,mio_compositor::diagnostics=debug \
 cargo run -p mio-compositor -- --config config/mio.kdl --command foot
 ```
 
-問題報告では、起動command、backend、再現操作、関係するlog行をまとめる。
+When diagnosing a problem, retain the startup command, backend, reproduction steps, and relevant log lines.

@@ -1,14 +1,14 @@
 # Getting Started
 
-最初は既存のWayland desktop内でnested起動する。問題が起きても現在のsessionへ戻れるため、
-Mioの操作と設定を確認する用途に向いている。
+[日本語版](getting-started-jp.md)
 
-NixOSへSDDM sessionとして導入する場合は、先に[Installation](installation.md)のNixOS moduleを
-有効にする。nested確認後、ログアウトしてsession一覧から「Mio」を選ぶ。
+Start Mio nested inside your current Wayland desktop. This lets you test its controls and configuration while retaining a working session to return to.
 
-## 1. Buildと設定検査
+For a NixOS display-manager session, first enable the module described in [Installation](installation.md). After testing nested mode, log out and select **Mio** from the session list.
 
-NixOSではrepository rootで次を実行する。
+## 1. Build and validate the configuration
+
+On NixOS, run these commands from the repository root:
 
 ```sh
 nix-shell
@@ -16,29 +16,20 @@ cargo build --workspace
 cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 ```
 
-最後のcommandが成功終了すればKDLは有効である。
-
-他のLinux distributionでは[Installation](installation.md)の依存packageを導入してから実行する。
-
-```sh
-cargo build --workspace
-cargo run -p mio-compositor -- --config config/mio.kdl --check-config
-```
-
-`install.sh`で導入済みの場合は、次のcommandで標準pathの設定を検査できる。
+On another distribution, install the dependencies listed in [Installation](installation.md), then run the two Cargo commands. If Mio was installed with `install.sh`, validate the standard configuration path with:
 
 ```sh
 mio-compositor --check-config
 ```
 
-repositoryの設定例を利用者設定として使う場合は、既存設定を上書きしないことを確認して配置する。
+To use the repository example as your user configuration, first make sure it will not overwrite an existing file:
 
 ```sh
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/mio"
 cp config/mio.kdl "${XDG_CONFIG_HOME:-$HOME/.config}/mio/config.kdl"
 ```
 
-## 2. Nested起動
+## 2. Start a nested session
 
 ```sh
 WINIT_UNIX_BACKEND=wayland RUST_LOG=info \
@@ -47,42 +38,39 @@ cargo run -p mio-compositor -- \
   --command foot
 ```
 
-Mioの外枠となるWindowと、その中に`foot`が表示される。標準設定ではwaybar等の
-`spawn-at-startup`も起動する。既存desktop側のshortcutが先にキーを奪う場合は、Mouse操作か
-競合しない一時的なbindを使う。
+A host Window containing Mio and `foot` should appear. The default `spawn-at-startup` programs, such as Waybar, also start. If the host desktop captures a shortcut first, use mouse controls or a temporary non-conflicting binding.
 
-導入済みbinaryなら次のように起動できる。
+With installed binaries:
 
 ```sh
 WINIT_UNIX_BACKEND=wayland RUST_LOG=info \
 mio-compositor --command foot
 ```
 
-## 3. 最低限の操作確認
+## 3. Check the basic controls
 
-- `Super+Q`: focused Windowを閉じる
-- `Super+Arrow`または`Super+H/J/K/L`: Focus移動
-- `Super+Ctrl+Arrow`: Cameraを1画面移動
-- `Super+1`〜`Super+0`: Camera倍率を変更
-- `Super+V`: Overviewを切り替える
-- `Super+R`: KDLを再読み込みする
+- `Super+Q`: close the focused Window
+- `Super+Arrow` or `Super+H/J/K/L`: move Focus
+- `Super+Ctrl+Arrow`: move the Camera by one viewport
+- `Super+1` through `Super+0`: change Camera zoom
+- `Super+V`: toggle Overview
+- `Super+R`: reload KDL configuration
 
-全操作は[設定リファレンス](configuration.md)を参照する。
+See the [configuration reference](configuration.md) for all controls.
 
-## 4. 正常終了
+## 4. Exit normally
 
-Mio内のterminalから実行する。
+From a terminal inside Mio:
 
 ```sh
 cargo run -p mio-compositor --bin mioctl -- quit
 ```
 
-installed binaryを使っている場合は`mioctl quit`でよい。terminalを強制終了したり親compositorの
-Windowを閉じたりするとclient側に`Broken pipe`が出ることがあるが、通常終了にはIPCを使う。
+Use `mioctl quit` with installed binaries. Force-closing the terminal or host Window can make clients report `Broken pipe`; use IPC for normal shutdown.
 
 ## 5. Direct backend
 
-Nestedで基本操作を確認してから、text VTで実行する。
+After testing nested mode, switch to a text VT and run:
 
 ```sh
 nix-shell
@@ -92,9 +80,6 @@ RUST_LOG=info cargo run -p mio-compositor -- \
   --command foot
 ```
 
-既存のgraphical session内から起動しない。現在は単一GPU・単一接続Outputを主な検証対象とする。
-終了できない場合に備えて、別VTからprocessを確認できる状態で試す。
+Do not launch the direct backend from an existing graphical session. Mio currently targets single-GPU, single-connected-Output setups for primary testing. Keep another VT available so you can inspect or stop the process if necessary.
 
-system-wideに導入した場合は、通常このcommandを手動実行せず、ログアウト後にdisplay managerの
-Wayland session一覧から「Mio」を選ぶ。初回は既存desktopを残し、Mio内のterminalから
-`mioctl quit`でdisplay managerへ戻れることを確認する。
+For a system-wide installation, normally select Mio from the display manager instead. Keep your existing desktop installed, and verify that `mioctl quit` returns you to the display manager.

@@ -1,95 +1,88 @@
-# Mio IPC リファレンス
+# Mio IPC Reference
 
-## 接続
+[日本語版](ipc-jp.md)
 
-Mioは`$XDG_RUNTIME_DIR/mio-WAYLAND_SOCKET.sock`へinstance固有のUnix socketを作り、
-所有者だけが読み書きできる`0600`にする。Mioが起動した子processには実際のpathを
-`MIO_SOCKET`として渡す。
+## Connection
 
-`mioctl`は既定で`MIO_SOCKET`へ接続する。Mioの外から操作する場合は明示する。
+Mio creates an instance-specific Unix socket at `$XDG_RUNTIME_DIR/mio-WAYLAND_SOCKET.sock` with owner-only `0600` permissions. Child processes launched by Mio receive its actual path through `MIO_SOCKET`.
+
+`mioctl` connects to `MIO_SOCKET` by default. Specify the socket when controlling Mio from outside its environment:
 
 ```sh
 mioctl --socket /run/user/1000/mio-wayland-2.sock state
 ```
 
-要求はUTF-8のcommand line 1件で、最初の改行またはEOFまでを読む。上限は4096 byteである。
-応答はJSON object 1件で、末尾改行はprotocol上必須ではない。
+A request is one UTF-8 command line, read through the first newline or EOF, with a 4096-byte limit. A response is one JSON object; a trailing newline is not required by the protocol.
 
-## mioctlの終了status
+## mioctl exit status
 
-- `0`: help/version表示、またはMioが`{"ok":true,...}`を返した
-- 非ゼロ: 引数、接続、通信の失敗、またはMioが`{"ok":false,...}`を返した
+- `0`: help/version was displayed, or Mio returned `{"ok":true,...}`
+- nonzero: argument, connection, or communication failure, or Mio returned `{"ok":false,...}`
 
-成功応答は標準出力へ、CLI errorとMioの拒否理由は標準errorへ出す。
+Successful responses go to standard output. CLI errors and rejection reasons from Mio go to standard error.
 
-## 読み取りcommand
+## Read commands
 
-| Command | 応答の主要field |
+| Command | Main response fields |
 |---|---|
-| `state` | `windows`, `focused_window`, `camera`, `outputs`, `cameras`を同一snapshotで返す |
+| `state` | `windows`, `focused_window`, `camera`, `outputs`, and `cameras` in one snapshot |
 | `windows` | `windows` |
-| `focused-window` | `window`。Focusがなければ`null` |
-| `camera` | active Cameraを`camera`へ返す |
-| `outputs` | adapter Outputの`outputs`とCore Cameraの`cameras` |
+| `focused-window` | `window`, or `null` if no Window is focused |
+| `camera` | active Camera in `camera` |
+| `outputs` | adapter Outputs in `outputs` and Core Cameras in `cameras` |
 
-Window objectは次のfieldを持つ。
+A Window object has these fields:
 
-| Field | 内容 |
+| Field | Meaning |
 |---|---|
-| `id` | instance内のWindow ID |
-| `app_id`, `title` | xdg-toplevel metadata。なければ`null` |
-| `rect` | World Grid上の`x`, `y`, `width`, `height` |
-| `focused` | Focus中か |
-| `presentation` | `normal`, `maximized`, `fullscreen` |
-| `opacity`, `floating`, `blur` | 現在有効なWindow Property |
+| `id` | Window ID within this instance |
+| `app_id`, `title` | xdg-toplevel metadata, or `null` when absent |
+| `rect` | `x`, `y`, `width`, and `height` on the World Grid |
+| `focused` | whether the Window has Focus |
+| `presentation` | `normal`, `maximized`, or `fullscreen` |
+| `opacity`, `floating`, `blur` | effective Window Properties |
 
-Camera objectは`output_id`, `x`, `y`, `zoom`を持つ。Output objectは`id`, `name`,
-logical geometryの`x`, `y`, `width`, `height`と`scale`を持つ。
+A Camera object contains `output_id`, `x`, `y`, and `zoom`. An Output object contains `id`, `name`, logical geometry (`x`, `y`, `width`, `height`), and `scale`.
 
-## Action command
+## Action commands
 
-`DIR`は`left`, `right`, `up`, `down`、`ID`は読み取りcommandで取得したunsigned integerである。
+`DIR` is `left`, `right`, `up`, or `down`. `ID` is an unsigned integer obtained from a read command.
 
-| Command | 内容 |
+| Command | Meaning |
 |---|---|
-| `activate-output ID` | active Output Cameraを変更する |
-| `focus ID` | WindowへFocusする |
-| `camera-to ID` | CameraをWindow中央へ移す |
-| `camera-step DIR` | active Cameraを1 viewport進める |
-| `move-window ID DIR` | WindowをGrid 1 cell移動する |
-| `resize-window ID DIR` | WindowをGrid 1 cell resizeする |
-| `toggle-floating ID` | Windowのfloating Propertyを切り替える |
-| `close ID` | Windowへcloseを要求する |
-| `set-property ID opacity FLOAT` | runtime opacity overrideを設定する |
-| `set-property ID floating BOOL` | runtime floating overrideを設定する |
-| `set-property ID blur BOOL` | runtime blur overrideを設定する |
-| `clear-property ID PROPERTY` | 指定したruntime overrideを消す |
+| `activate-output ID` | Change the active Output Camera |
+| `focus ID` | Focus a Window |
+| `camera-to ID` | Move the Camera to the Window center |
+| `camera-step DIR` | Move the active Camera by one viewport |
+| `move-window ID DIR` | Move a Window by one Grid cell |
+| `resize-window ID DIR` | Resize a Window by one Grid cell |
+| `toggle-floating ID` | Toggle the Window's floating Property |
+| `close ID` | Request that the Window close |
+| `set-property ID opacity FLOAT` | Set a runtime opacity override |
+| `set-property ID floating BOOL` | Set a runtime floating override |
+| `set-property ID blur BOOL` | Set a runtime blur override |
+| `clear-property ID PROPERTY` | Clear the selected runtime override |
 
-`PROPERTY`は`opacity`, `floating`, `blur`、`BOOL`は`true`または`false`である。
-`set-opacity ID FLOAT`と`clear-opacity ID`は互換用aliasとして維持する。新しい連携では
-`set-property`と`clear-property`を使う。
+`PROPERTY` is `opacity`, `floating`, or `blur`; `BOOL` is `true` or `false`. `set-opacity ID FLOAT` and `clear-opacity ID` remain as compatibility aliases. New integrations should use `set-property` and `clear-property`.
 
-Action commandはkeyboardとmouseと同じCore Action経路を使用する。IPC専用のWindow状態を
-持たない。
+Action commands use the same Core Action path as keyboard and mouse input. IPC does not maintain separate Window state.
 
 ## Lifecycle command
 
-`quit`は`Action`ではなくcompositor lifecycle commandである。`{"ok":true}`を返した後、
-通常の終了処理へ進む。
+`quit` is a compositor lifecycle command rather than an `Action`. Mio begins normal shutdown after returning `{"ok":true}`.
 
-## 応答
+## Responses
 
-成功時は必ず`ok`が`true`になる。
+A successful response always has `ok` set to `true`:
 
 ```json
 {"ok":true}
 ```
 
-失敗時は`ok`が`false`になり、`error`へ人間が読める理由を返す。
+On failure, `ok` is `false` and `error` contains a human-readable reason:
 
 ```json
 {"ok":false,"error":"unknown window 9"}
 ```
 
-現在のIPCは短命なlocal CLI接続用である。subscription、event stream、長時間接続client、
-remote transportは提供しない。
+The current IPC is intended for short-lived local CLI connections. It does not provide subscriptions, event streams, long-lived clients, or remote transport.

@@ -1,31 +1,27 @@
 # Overview
 
-MioのOverviewは別画面やWindow一覧ではなく、同じWorldをCameraで遠くから見る操作である。
-WindowのWorld座標、サイズ、相対位置、identityは変化しない。
+[日本語版](overview-jp.md)
 
-## 操作
+Mio's Overview is not a separate screen or window list. It is the same World viewed from farther away through the Camera. Window World coordinates, sizes, relative positions, and identities do not change.
 
-標準設定では次を使う。
+## Controls
 
-| Key | 動作 |
+The default configuration provides these controls:
+
+| Key | Action |
 |---|---|
-| `Super+V` | 通常倍率`1.0`とOverview倍率`0.35`を切り替える |
-| `Super+S` | focused Windowを中央へ置き、倍率`1.0`へ戻す |
-| `Super+Arrow` / `Super+H/J/K/L` | World上のWindowへFocusを移す |
-| `Super+Ctrl+Arrow` | Cameraを1 viewport移動する |
-| `Super+1`〜`Super+0` | Overviewに限定せず絶対倍率を直接選ぶ |
+| `Super+V` | Toggle between the normal zoom `1.0` and Overview zoom `0.35` |
+| `Super+S` | Center the focused Window and return to zoom `1.0` |
+| `Super+Arrow` / `Super+H/J/K/L` | Move Focus to another Window in the World |
+| `Super+Ctrl+Arrow` | Move the Camera by one viewport |
+| `Super+1` through `Super+0` | Select an absolute zoom directly, not only in Overview |
 
-Overview中のFocus移動も通常と同じWindowとActionを使う。専用の複製Windowや選択一覧はない。
-`select-overview`は現在focusedなWindowをCamera中央へ置いて通常倍率へ戻すため、先に方向Focusで
-対象を選ぶ。
+Focus movement in Overview uses the same Windows and Actions as normal operation. There are no duplicate Windows or separate selection list. `select-overview` centers the currently focused Window and restores the normal zoom, so first choose the target with directional Focus.
 
-## 配置との関係
+## Relationship to placement
 
-Overviewは表示変換だけであり、新規Windowの配置探索範囲を広げない。zoom out中も通常viewportを
-基準に配置するため、遠景に見えている空き領域全体を自動的に埋める動作にはならない。
+Overview is only a display transform; it does not expand the search area for placing new Windows. Even while zoomed out, placement uses the normal viewport, rather than automatically filling every visible empty area in the distant view.
 
-Window、gap、popup、subsurfaceは同じpresentation scaleで縮小される。見た目上の距離とWorldの
-占有範囲の対応を維持し、Overview専用layoutは作らない。
+Windows, gaps, popups, and subsurfaces are reduced with the same presentation scale. This preserves the relationship between apparent distance and occupied World space; Mio does not create an Overview-specific layout.
 
-より低レベルなCamera Actionの意味は[Cameraリファレンス](camera.md)を参照する。
-
+See the [Camera reference](camera.md) for the lower-level Camera Actions.

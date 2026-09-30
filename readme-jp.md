@@ -29,8 +29,8 @@
 澪には従来型のワークスペースがありません。ウィンドウは一つの連続した2次元Worldに
 配置され、画面はそのWorldを見るCameraとして扱われます。
 
-初めて試す場合は[Installation](docs/installation.md)と
-[Getting Started](docs/getting-started.md)から始めてください。
+初めて試す場合は[Installation](docs/installation-jp.md)と
+[Getting Started](docs/getting-started-jp.md)から始めてください。
 
 > [!IMPORTANT]
 > 澪は作者自身のdesktop環境のために作っている個人プロジェクトです。公開repositoryとして
@@ -57,7 +57,7 @@
 ## 導入方法
 
 対応する入口は次のとおりです。詳しい依存package、session登録、削除方法は
-[Installation](docs/installation.md)を参照してください。
+[Installation](docs/installation-jp.md)を参照してください。
 
 | 環境 | 推奨方法 |
 |---|---|
@@ -94,7 +94,7 @@ nix-shell
 ```
 
 通常のNixOS sessionとして導入するためのflake packageとNixOS moduleもあります。
-SDDMへの登録を含む設定例は[Installation](docs/installation.md)を参照してください。
+SDDMへの登録を含む設定例は[Installation](docs/installation-jp.md)を参照してください。
 NixOS moduleは澪のsession内でGNOME KeyringのSecrets componentも開始するため、GNOME desktopを
 使用していなくてもGitHub CLI等がlogin keyringへ保存した認証情報を利用できます。
 NixOS以外では`install.sh`がrelease build、標準Wayland session entryの登録、manifestに
@@ -196,7 +196,7 @@ capture protocolを利用できるため、Mioはその範囲をdesktop session�
 ## 設定
 
 設定例は[config/mio.kdl](config/mio.kdl)にあります。標準の配置先は次のいずれかです。
-全設定項目とkeybind Action名は[設定リファレンス](docs/configuration.md)にまとめています。
+全設定項目とkeybind Action名は[設定リファレンス](docs/configuration-jp.md)にまとめています。
 `appearance.opacity`は全Windowの既定値で、後続の`window-rule`からアプリごとに上書き
 できます。例えば全Windowを半透明にし、`foot`だけを不透明にできます。
 
@@ -287,7 +287,7 @@ bind "Super+W" "spawn" "sh" "-c" "my-command | another-command"
 `bind`を一つでも記述すると、組み込みキー割り当て一式は設定内の`bind`で置き換わります。
 残したい既定操作もすべて記述してください。同じキーの組み合わせを重複して宣言すると
 設定エラーになります。利用できるActionと全設定項目は
-[設定リファレンス](docs/configuration.md)を参照してください。
+[設定リファレンス](docs/configuration-jp.md)を参照してください。
 
 ## 基本操作
 
@@ -352,8 +352,8 @@ Camera倍率は`bind "Super+5" "camera-zoom" 0.5`のように個別に変更で�
 ## IPCとmioctl
 
 澪の中で起動した端末には`MIO_SOCKET`が渡されるため、`mioctl`からその澪インスタンスを
-操作できます。全command、応答形式、終了statusは[IPCリファレンス](docs/ipc.md)を
-参照してください。compositor自体のoptionは[CLIリファレンス](docs/cli.md)にあります。
+操作できます。全command、応答形式、終了statusは[IPCリファレンス](docs/ipc-jp.md)を
+参照してください。compositor自体のoptionは[CLIリファレンス](docs/cli-jp.md)にあります。
 
 ```sh
 cargo run -p mio-compositor --bin mioctl -- focused-window
@@ -453,16 +453,16 @@ cargo run -p mio-compositor -- --config config/mio.kdl --command foot
 ## 設計資料
 
 - [docs/requirements.md](docs/requirements.md): 要件と実装フェーズ
-- [docs/installation.md](docs/installation.md): 現在のbuild・導入方法と未整備範囲
-- [docs/getting-started.md](docs/getting-started.md): nested起動から正常終了までの最短手順
-- [docs/configuration.md](docs/configuration.md): KDL設定とkeybind Actionの公開仕様
-- [docs/keybindings.md](docs/keybindings.md): 標準keybindと変更方法
-- [docs/camera.md](docs/camera.md): Camera Action、追従、zoom、複数Outputでの意味
-- [docs/overview.md](docs/overview.md): Overviewの操作とWorldとの関係
-- [docs/window-properties.md](docs/window-properties.md): Window Ruleの合成とProperty優先順位
-- [docs/cli.md](docs/cli.md): mio-compositorのCLI option
-- [docs/ipc.md](docs/ipc.md): mioctl、IPC command、JSON応答
-- [docs/troubleshooting.md](docs/troubleshooting.md): 起動、設定、capture等の問題切り分け
+- [docs/installation-jp.md](docs/installation-jp.md): 現在のbuild・導入方法と未整備範囲
+- [docs/getting-started-jp.md](docs/getting-started-jp.md): nested起動から正常終了までの最短手順
+- [docs/configuration-jp.md](docs/configuration-jp.md): KDL設定とkeybind Actionの公開仕様
+- [docs/keybindings-jp.md](docs/keybindings-jp.md): 標準keybindと変更方法
+- [docs/camera-jp.md](docs/camera-jp.md): Camera Action、追従、zoom、複数Outputでの意味
+- [docs/overview-jp.md](docs/overview-jp.md): Overviewの操作とWorldとの関係
+- [docs/window-properties-jp.md](docs/window-properties-jp.md): Window Ruleの合成とProperty優先順位
+- [docs/cli-jp.md](docs/cli-jp.md): mio-compositorのCLI option
+- [docs/ipc-jp.md](docs/ipc-jp.md): mioctl、IPC command、JSON応答
+- [docs/troubleshooting-jp.md](docs/troubleshooting-jp.md): 起動、設定、capture等の問題切り分け
 - [docs/architecture-overview.md](docs/architecture-overview.md): Mio設計の日本語概要
 - [docs/release-readiness.md](docs/release-readiness.md): 1.0監査結果と残作業
 - [docs/spec.md](docs/spec.md): 詳細仕様

@@ -1,46 +1,37 @@
-# Cameraリファレンス
+# Camera Reference
 
-Mioの画面は、一つの連続した2次元Worldを見るCameraである。Cameraの移動や倍率変更は
-WindowのWorld座標、サイズ、所有関係、寿命を変更しない。Cameraの境界は移動の区切りであり、
-workspaceやWindow配置の境界ではない。
+[日本語版](camera-jp.md)
 
-## 状態
+Mio's display is a Camera looking into one continuous two-dimensional World. Moving or zooming the Camera does not change Window World coordinates, sizes, ownership, or lifetime. Camera boundaries are navigation stops, not workspace or Window-placement boundaries.
 
-Cameraは次の状態を持つ。
+## State
 
-- `position`: World上の左上位置。小数と負数を取れる
-- `viewport`: 倍率1.0で画面に入るGridの幅と高さ
-- `zoom`: 絶対倍率。現在のKDL Actionでは`0.1..=1.0`
+The Camera has the following state:
 
-`camera { viewport W H }`は通常倍率の論理viewportを定める。zoomを小さくすると見える
-World範囲が広がるが、論理viewportやWindow geometry自体は変更されない。Overviewも別の
-Window配置ではなく、このCamera倍率を使う。
+- `position`: the top-left position in the World; fractional and negative values are allowed
+- `viewport`: the width and height of the Grid visible at zoom `1.0`
+- `zoom`: the absolute zoom; current KDL Actions accept `0.1..=1.0`
 
-## Action
+`camera { viewport W H }` defines the logical viewport at normal zoom. Reducing the zoom reveals a larger World area without changing the logical viewport or Window geometry. Overview also uses this Camera zoom rather than a separate Window layout.
 
-| Action | 意味 |
+## Actions
+
+| Action | Meaning |
 |---|---|
-| `CameraStep(Direction)` | 設定されたviewport 1個分を移動する |
-| `CameraNudge(Direction)` | Grid 1セル分を移動する |
-| `CameraPan { delta_x, delta_y }` | 小数を含むWorld差分だけ移動する |
-| `CameraTo(Window)` | Window中心を含む自然なviewport stopへ移動する |
-| `CameraCenter(Window)` | zoomを変えずWindowを画面中央へ置く |
-| `CameraFollow(Window)` | 完全に見えていれば動かず、見切れていれば必要な軸だけ追従する |
-| `CameraZoom(value)` | Cameraの絶対倍率を変更する |
+| `CameraStep(Direction)` | Move by one configured viewport |
+| `CameraNudge(Direction)` | Move by one Grid cell |
+| `CameraPan { delta_x, delta_y }` | Move by a World-space delta, including fractional values |
+| `CameraTo(Window)` | Move to a natural viewport stop containing the Window center |
+| `CameraCenter(Window)` | Center the Window without changing zoom |
+| `CameraFollow(Window)` | Do nothing if fully visible; otherwise follow only on the necessary axes |
+| `CameraZoom(value)` | Set the absolute Camera zoom |
 
-`CameraFollow`では、Windowが完全に画面外にある場合、または現在倍率で見える範囲より
-Windowが大きい場合は、そのWindowを中央へ置く。倍率は変えない。
+If a Window is entirely outside the view, or larger than the visible area at the current zoom, `CameraFollow` centers it. It does not change zoom.
 
-FocusとCameraは独立した状態であり、Core Actionも分離されている。Keyboardや画面端操作など、
-意味上のFocus移動を行う入力adapterは`Focus`と`CameraFollow`を合成する。pointer focusは
-Cameraを勝手に移動せず、既にfocusedなWindowへのprotocol activation再通知でも追従を
-繰り返さない。
+Focus and Camera are independent Core states and use separate Actions. Input adapters that semantically move Focus, such as keyboard and screen-edge controls, compose `Focus` with `CameraFollow`. Pointer focus does not move the Camera implicitly, and repeated protocol activation of an already focused Window does not repeatedly follow it.
 
-Fullscreen中は、そのOutputの表示を固定するためCamera Actionを拒否する。Fullscreenを解除
-すると再び操作できる。
+Camera Actions are rejected during fullscreen so the Output view remains fixed. They become available again after leaving fullscreen.
 
-## 複数Output
+## Multiple Outputs
 
-各OutputはそれぞれCameraを持つ。入力Actionはactive OutputのCameraを対象とし、
-`cycle-output`で対象を切り替える。これはWorldやWindowをOutput別containerへ分割する
-仕組みではない。
+Each Output has its own Camera. Input Actions target the active Output's Camera, and `cycle-output` changes that target. This does not divide the World or Windows into per-Output containers.

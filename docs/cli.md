@@ -1,4 +1,6 @@
-# Mio CLI リファレンス
+# Mio CLI Reference
+
+[日本語版](cli-jp.md)
 
 ## mio-compositor
 
@@ -6,26 +8,27 @@
 mio-compositor [OPTIONS]
 ```
 
-| Option | 内容 |
+| Option | Description |
 |---|---|
-| `-c PROGRAM`, `--command PROGRAM` | Mioの起動後に1つのprogramを起動する |
-| `--config PATH` | 使用するKDL設定を明示する |
-| `--check-config` | 設定を検査して終了する。無効な設定へfallbackしない |
-| `--backend winit` | nested winit backendを使う。既定値 |
-| `--backend udev` | DRM/KMSへ直接出力するbackendを使う |
-| `--xwayland-satellite` | `xwayland-satellite`を起動する |
-| `--xwayland-display :N` | satelliteのX displayを指定する。既定値は`:100` |
-| `--virtual-outputs N` | nested画面をN個の開発用仮想Outputへ分割する |
-| `-h`, `--help` | helpを表示して成功終了する |
-| `-V`, `--version` | versionを表示して成功終了する |
+| `-c PROGRAM`, `--command PROGRAM` | Launch one program after Mio starts |
+| `--config PATH` | Use an explicit KDL configuration file |
+| `--check-config` | Validate the configuration and exit without falling back |
+| `--backend winit` | Use the nested winit backend; this is the default |
+| `--backend udev` | Use the direct DRM/KMS backend |
+| `--xwayland-satellite` | Start `xwayland-satellite` |
+| `--xwayland-display :N` | Select its X display; defaults to `:100` |
+| `--virtual-outputs N` | Split the nested window into N development outputs |
+| `-h`, `--help` | Print help and exit successfully |
+| `-V`, `--version` | Print the version and exit successfully |
 
-`--virtual-outputs`は正の整数だけを受理し、`winit` backendでのみ使用できる。
-未知のoption、引数不足、不正値はerrorとして非ゼロ終了する。
+`--virtual-outputs` accepts only positive integers and is available only with the
+`winit` backend. Unknown options, missing arguments, and invalid values produce an error
+and a non-zero exit status.
 
-`--command`はshell command lineではなく、単一の実行ファイル名である。複数引数を伴う
-常駐programはKDLの`spawn-at-startup`へargvとして記述する。
+`--command` is one executable name, not a shell command line. Declare persistent
+programs with multiple arguments as argv in KDL using `spawn-at-startup`.
 
-## 終了
+## Shutdown
 
-`SIGINT`、`SIGTERM`、IPCの`quit`はいずれも同じ通常終了経路を使う。Mioはevent loopを停止し、
-起動したxwayland-satelliteを回収してIPC socketを削除する。
+`SIGINT`, `SIGTERM`, and IPC `quit` use the same clean shutdown path. Mio stops the event
+loop, reaps the xwayland-satellite process it started, and removes the IPC socket.

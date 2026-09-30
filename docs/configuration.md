@@ -1,156 +1,116 @@
-# Mio 設定リファレンス
+# Mio Configuration Reference
 
-Mioの設定はKDLで記述する。標準パスは`$XDG_CONFIG_HOME/mio/config.kdl`、
-`XDG_CONFIG_HOME`がない場合は`$HOME/.config/mio/config.kdl`である。
-`--config PATH`で別ファイルを指定できる。
+[日本語版](configuration-jp.md)
 
-変更前に構文を検査できる。
+Mio uses KDL configuration. The standard path is `$XDG_CONFIG_HOME/mio/config.kdl`, or `$HOME/.config/mio/config.kdl` when `XDG_CONFIG_HOME` is unset. Use `--config PATH` to select another file.
+
+Validate changes before applying them:
 
 ```sh
 cargo run -p mio-compositor -- --config config/mio.kdl --check-config
 ```
 
-`bind`を1つでも書くと組み込みkeybind一式を置き換える。`edge-command`も同様に、
-1つでも書くと組み込みのedge command一式を置き換える。それ以外の省略項目は組み込み値を使う。
+Writing any `bind` replaces the complete built-in keybinding set. Likewise, writing any `edge-command` replaces all built-in edge commands. Other omitted settings use built-in defaults. Unknown nodes and options are errors.
 
-## Top-level node
+## Top-level nodes
 
-| Node | 内容 |
+| Node | Meaning |
 |---|---|
-| `output { scale NUMBER }` | Wayland Outputのscale。`0.5..=4.0`、既定値`1.0` |
-| `appearance { ... }` | Windowと背景の外観 |
-| `effects { ... }` | blur、shadow、航跡、開閉transition |
-| `animation { speed NUMBER }` | animation全体の速度。`0`で無効 |
-| `camera { viewport W H }` | 通常倍率で画面に入るGrid数 |
-| `placement { initial-size W H }` | 新規Windowの初期Grid size |
-| `mouse { ... }` | Mouse全体設定（現在はcursor非表示時間） |
-| `mouse-bind "GESTURE" "ACTION"` | Mouse gestureへActionを割り当てる |
-| `include "PATH"` | 別のKDL設定ファイルをその位置へ読み込む |
-| `spawn-at-startup "PROGRAM" "ARG"...` | 起動後に一度だけ実行するargv |
-| `edge-command "EDGE" "PROGRAM" "ARG"...` | Output端の短い右clickで実行するargv |
-| `bind "CHORD" "ACTION"` | keybind |
-| `bind "CHORD" "spawn" "PROGRAM" "ARG"...` | keybindから外部commandを実行 |
-| `window-rule { ... }` | Window Propertyの設定rule |
+| `output { scale NUMBER }` | Wayland Output scale, `0.5..=4.0`, default `1.0` |
+| `appearance { ... }` | Window and background appearance |
+| `effects { ... }` | Blur, shadow, cursor wake, and Window transitions |
+| `animation { speed NUMBER }` | Global animation speed; `0` disables animations |
+| `camera { viewport W H }` | Grid dimensions visible at normal zoom |
+| `placement { initial-size W H }` | Initial Grid size for new Windows |
+| `mouse { ... }` | General mouse settings |
+| `mouse-bind "GESTURE" "ACTION"` | Assign Actions to mouse gestures |
+| `include "PATH"` | Include another KDL file at this position |
+| `spawn-at-startup "PROGRAM" "ARG"...` | Run argv once after startup |
+| `edge-command "EDGE" "PROGRAM" "ARG"...` | Run argv on a short right-click at an Output edge |
+| `bind "CHORD" "ACTION"` | Keybinding |
+| `bind "CHORD" "spawn" "PROGRAM" "ARG"...` | External command keybinding |
+| `window-rule { ... }` | Window Property rule |
 
-未知のnodeやoptionはerrorになる。
-
-## 値の基本形式
-
-- colorは`"#RRGGBB"`またはalpha付きの`"#RRGGBBAA"`
-- size、幅、時間などは各表に記載した範囲の数値
-- commandはshell文字列ではなく`"PROGRAM" "ARG"...`のargv
-- pathは`include`を除いてshellの`~`展開や環境変数展開を行わない
-
-設定を再読み込みしてerrorになった場合は、直前の有効な設定を維持して画面上にerrorを表示する。
-起動時の設定が不正な場合は組み込み既定値で起動するため、設定を修正して`reload-config`を実行できる。
+Colors are `"#RRGGBB"` or `"#RRGGBBAA"`. Commands are argv, not shell strings. Except for `include`, paths do not expand `~` or environment variables. A failed reload preserves the last valid configuration and displays an error. Invalid startup configuration falls back to built-in defaults so it can be corrected and reloaded.
 
 ## Output
 
-文字、UI、cursorなどの基準となるWayland Output scaleを指定する。Camera zoomとは別の設定で、
-fractional scaleも利用できる。設定再読み込み時にも既存Outputへ反映される。
+Output scale controls the logical scale of text, UI, and cursors. It is independent of Camera zoom, supports fractional values, and is reapplied to existing Outputs on reload.
 
 ```kdl
-output {
-    scale 1.25
-}
+output { scale 1.25 }
 ```
 
-## Cursor theme and size
-
-Cursor themeと論理sizeはKDLではなく、Mio起動時の`XCURSOR_THEME`と`XCURSOR_SIZE`を使用する。
-たとえば`XCURSOR_SIZE=24`はOutput scaleにかかわらず24 logical pixelを指定する。Mioは
-themeに要求sizeそのものの画像がない場合も、最も近い画像を要求sizeへ拡大縮小する。
-環境変数は起動時に読み込むため、変更後はMio sessionを再起動する必要がある。
+Cursor theme and logical size come from `XCURSOR_THEME` and `XCURSOR_SIZE` at Mio startup. Mio scales the closest available theme image to the requested size. Restart the Mio session after changing these variables.
 
 ## Include
 
-`include`は別のKDLファイルを、記述した位置へ展開する。相対pathは`include`を書いた
-ファイルのディレクトリを基準に解決する。読み込み先でも`include`を使用できるが、循環参照は
-errorになる。
+`include` expands another KDL file in place. Relative paths are resolved from the including file; nested includes are supported, while cycles are errors.
 
 ```kdl
 include "wallpaper.kdl"
 ```
 
-指定先が存在しない場合だけはerrorにせず無視する。これは、壁紙選択ツールなどが後から生成する
-任意設定を安全に読み込むための挙動である。存在するファイルが読めない場合やKDL・設定値が不正な
-場合は通常どおりerrorを表示する。
-
-例えば`wallpaper.kdl`を次のどちらかに更新すれば、次回のMio起動時に選択したbackendを起動できる。
-
-```kdl
-spawn-at-startup "mpvpaper" "*" "/path/to/wallpaper.mp4"
-// または
-spawn-at-startup "awww-daemon"
-spawn-at-startup "awww" "img" "/path/to/wallpaper.png"
-```
-
-設定reloadでも読み込み先は再評価される。ただし`spawn-at-startup`はreload時には実行されないため、
-壁紙commandの変更は次回のMio起動時に反映される。
+A missing target is intentionally ignored, allowing optional files generated by tools. Existing but unreadable or invalid files produce normal errors. Includes are reevaluated on reload, but included `spawn-at-startup` commands still run only on the next Mio startup.
 
 ## Appearance
 
-| Option | 既定値 | 値・意味 |
+| Option | Default | Value |
 |---|---:|---|
-| `background-color` | `"#FFFFFF"` | `"#RRGGBB"`または`"#RRGGBBAA"` |
-| `window-border-width` | `1` | logical pixel、`0..=4096`。`0`で無効 |
-| `window-border-color` | `"#FFFFFF2E"` | border color |
-| `focus-indicator-width` | `320` | 水光の横幅、logical pixel、`0..=4096` |
-| `focus-indicator-height` | `2` | 水光の高さ、logical pixel、`0..=4096` |
-| `focus-indicator-color` | `"#FFFFFF"` | 水光の色 |
-| `corner-radius` | `0` | logical pixel、`0..=4096`。`0`で無効 |
-| `gaps` | `24` | 各Window辺のinset、logical pixel、`0..=4096` |
-| `opacity` | `1.0` | `0.0..=1.0`。全Windowの既定opacity |
-| `opacity-toggle A B` | `1.0 0.8` | `toggle-opacity`で切り替える異なる2値 |
+| `background-color` | `"#FFFFFF"` | color |
+| `window-border-width` | `1` | `0..=4096` logical px; `0` disables |
+| `window-border-color` | `"#FFFFFF2E"` | color |
+| `focus-indicator-width` | `320` | `0..=4096` logical px |
+| `focus-indicator-height` | `2` | `0..=4096` logical px |
+| `focus-indicator-color` | `"#FFFFFF"` | color |
+| `corner-radius` | `0` | `0..=4096` logical px; `0` disables |
+| `gaps` | `24` | `0..=4096` logical px inset per edge |
+| `opacity` | `1.0` | default Window opacity, `0.0..=1.0` |
+| `opacity-toggle A B` | `1.0 0.8` | two distinct values for `toggle-opacity` |
 
-`opacity`はclient surface全体へ適用される。application内部の背景だけを透明にして文字や画像を
-不透明に保つことはできない。その表現が必要な場合はapplication側で背景alphaを設定する。
+Opacity applies to the complete client surface. Mio cannot make only an application's background transparent while retaining opaque text and images; configure background alpha in the application for that result.
 
 ## Effects
 
-| Option | 既定値 | 値・意味 |
+| Option | Default | Value |
 |---|---:|---|
-| `blur-passes` | `3` | `1..=8`。多いほど滑らかだがGPU負荷が増える |
+| `blur-passes` | `3` | `1..=8`; smoother values cost more GPU time |
 | `blur-offset` | `2.0` | `0.5..=20.0` |
-| `shadow-radius` | `16.0` | `0.0..=256.0`。`0`で無効 |
-| `shadow-offset X Y` | `0 0` | 各`-4096..=4096` logical pixel |
-| `shadow-color` | `"#00000040"` | shadow color |
-| `cursor-wake` | `true` | `true` / `false` |
-| `cursor-wake-threshold` | `1600` | `1..=10000`。航跡を発生させる移動速度 |
-| `cursor-wake-strength` | `0.032` | `0.0..=0.2`。背景屈折の強さ |
-| `cursor-wake-width` | `8.5` | `1.0..=64.0` logical pixel |
+| `shadow-radius` | `16.0` | `0.0..=256.0`; `0` disables |
+| `shadow-offset X Y` | `0 0` | each `-4096..=4096` logical px |
+| `shadow-color` | `"#00000040"` | color |
+| `cursor-wake` | `true` | boolean |
+| `cursor-wake-threshold` | `1600` | activation speed, `1..=10000` |
+| `cursor-wake-strength` | `0.032` | refraction strength, `0.0..=0.2` |
+| `cursor-wake-width` | `8.5` | `1.0..=64.0` logical px |
 | `cursor-wake-duration` | `1400` | `100..=10000` ms |
-| `window-transition` | `"water"` | `"water"` / `"sci-fi"` / `"none"` |
+| `window-transition` | `"water"` | `"water"`, `"sci-fi"`, or `"none"` |
 | `window-transition-duration` | `420` | `100..=5000` ms |
 
-## Animation、Camera、Placement
+## Animation, Camera, and placement
 
-| Node | 既定値 | 内容 |
+| Node | Default | Meaning |
 |---|---:|---|
-| `animation { speed NUMBER }` | `1.0` | `0`でanimation無効。大きいほど早く収束する |
-| `camera { viewport W H }` | `8 8` | 通常倍率でOutputに対応するWorldのGrid数 |
-| `placement { initial-size W H }` | `8 8` | 新規Windowの初期Grid size |
+| `animation { speed NUMBER }` | `1.0` | `0` disables; larger values converge faster |
+| `camera { viewport W H }` | `8 8` | World Grid dimensions corresponding to the Output at normal zoom |
+| `placement { initial-size W H }` | `8 8` | initial Grid size of new Windows |
 
-`viewport`と`initial-size`の幅・高さは正の整数である。Camera zoomはこの論理viewportを変えず、
-同じWorldを遠くから表示する。
+Viewport and initial-size dimensions are positive integers. Zoom changes only the view of the same World.
 
 ## Mouse
 
-`mouse-bind GESTURE ACTION`は、keybindと同じく入力から動作への向きで記述する。
-button名は`left`、`right`、`middle`で、`right+left`はrightを保持してleftを押すordered chordである。
+`mouse-bind GESTURE ACTION` maps input to behavior, like a keybinding. Buttons are `left`, `right`, and `middle`. `right+left` is an ordered chord: hold right, then press left.
 
-| Gesture | 用途 |
+| Gesture | Typical continuous action |
 |---|---|
 | `BUTTON-drag` | `camera-pan` |
 | `BUTTON-wheel` | `camera-zoom` |
 | `BUTTON+BUTTON-drag` | `move-window` |
 | `window-edge+BUTTON-drag` | `resize-window` |
 | `output-edge+BUTTON-click` | `place-next` |
-| `BUTTON-click` / `BUTTON+BUTTON-click` | keybindと共通のAction。`clicks=1..=5` |
+| `BUTTON-click` / `BUTTON+BUTTON-click` | shared Action, with `clicks=1..=5` |
 
-dragやwheelは継続的なadapter操作へ結び、clickは共有Actionへ結ぶ。click対象WindowへFocusを
-移してからActionを記述順に実行する。単button clickは同じbuttonへ一つだけ割り当てられる。
-省略したbindingやActionは暗黙に補われない。
+Drag and wheel gestures connect to continuous adapter operations. Clicks focus the target Window, then execute Actions in declaration order. Only one single-button click binding may use a given button. Mio does not supply omitted bindings or Actions implicitly.
 
 ```kdl
 mouse-bind "right+left-click" clicks=1 {
@@ -159,109 +119,77 @@ mouse-bind "right+left-click" clicks=1 {
 }
 ```
 
-`action`にはkeybindと同じAction名・引数を指定でき、`spawn`もargv形式で利用できる。
+An `action` accepts the same names and arguments as a keybinding, including argv-form `spawn`.
 
-`mouse { cursor-hide-delay-ms N }`はpointer停止後にcursorを隠すまでの時間をmsで指定する。
-既定値は`0`（自動非表示なし）。キー入力中はcursorを隠し、pointerを動かすと再表示する。
+`mouse { cursor-hide-delay-ms N }` sets the idle delay in milliseconds before hiding the cursor. The default `0` disables idle hiding. Keyboard input hides it; pointer movement shows it again.
 
-`spawn-at-startup`は最初のOutputが利用可能になると直ちに起動するが、外部の壁紙clientが
-最初のbufferを描くまでの間は`background-color`が見える。起動時の色変化を目立たなくするには、
-壁紙に近い色を`background-color`へ指定する。
+## Startup and edge commands
 
-## Startup commandとedge command
-
-`spawn-at-startup`はMio起動ごとに一度だけ実行する。設定reloadでは再実行しない。Mioが作成した
-`WAYLAND_DISPLAY`、`MIO_SOCKET`、`XDG_CURRENT_DESKTOP=mio`、`XDG_SESSION_DESKTOP=mio`、
-`MIO_BACKEND`を継承する。Outputがまだない場合は、最初のOutputが利用可能になるまで起動を保留する。
+`spawn-at-startup` runs once per Mio startup, not on reload. It inherits Mio's `WAYLAND_DISPLAY`, `MIO_SOCKET`, `XDG_CURRENT_DESKTOP=mio`, `XDG_SESSION_DESKTOP=mio`, and `MIO_BACKEND`. Launch waits until the first Output exists.
 
 ```kdl
 spawn-at-startup "waybar"
 spawn-at-startup "fcitx5" "-d"
 ```
 
-`edge-command`はOutput端の短い右clickに外部commandを割り当てる。edgeは`left`、`right`、`top`、
-`bottom`である。一つでも宣言すると組み込みedge command一式を置き換える。既定値はbottom edgeの
-`wofi --show drun`である。
+`edge-command` assigns an external command to a short right-click on `left`, `right`, `top`, or `bottom`. Declaring one replaces all built-ins. The default is `wofi --show drun` at the bottom edge.
 
 ```kdl
 edge-command "bottom" "wofi" "--show" "drun"
 ```
 
-commandでpipe、redirect、glob、環境変数展開等が必要な場合だけshellを明示する。
+Explicitly use a shell only when pipes, redirects, globs, or environment expansion are required:
 
 ```kdl
 spawn-at-startup "sh" "-c" "program-a | program-b"
 ```
 
-## Keybind
+## Keybindings
 
-chordは`Ctrl`、`Alt`、`Shift`、`Super`とkeyを`+`で連結する。同じchordを重複して
-宣言できない。keyには1文字、またはxkbcommonのkeysym名を指定できる。
-
-代表例：
-
-- `Space`、`Enter`、`Tab`、`Escape`、`BackSpace`
-- `Left`、`Right`、`Up`、`Down`、`Home`、`End`、`PageUp`、`PageDown`
-- `Insert`、`Delete`、`PrintScreen`、`Menu`
-- `F1`から`F35`
-- `KP_0`、`KP_Add`などのkeypad key
-- `XF86AudioRaiseVolume`、`XF86AudioMute`、`XF86MonBrightnessUp`などのXF86 key
-
-`Esc`、`SpaceBar`、`PrtSc`、`PgUp`、`PgDn`等の一般的な別名も利用できる。文字keyの
-判定は修飾後の記号ではなくkeymapのbase keysymを使うため、例えば`Shift+1`は`!`ではなく
-`1`として記述する。
+A chord joins `Ctrl`, `Alt`, `Shift`, and `Super` with a key using `+`. Chords must be unique. Keys may be one character or an xkbcommon keysym, including `Space`, arrows, navigation keys, `PrintScreen`, `F1` through `F35`, keypad names such as `KP_Add`, and XF86 names. Common aliases such as `Esc`, `PrtSc`, and `PgUp` are accepted. Character bindings use the base keysym, so write `Shift+1`, not `Shift+!`.
 
 ```kdl
 bind "Super+Space" "spawn" "wofi" "--show" "drun"
 bind "PrintScreen" "spawn" "grim"
 ```
 
-方向Actionの末尾は`left`、`right`、`up`、`down`のいずれかに置き換える。
+Replace `DIRECTION` with `left`, `right`, `up`, or `down`:
 
-| Action | 内容 |
+| Action | Meaning |
 |---|---|
-| `focus-DIRECTION` | 指定方向へFocusを移す |
-| `camera-DIRECTION` | Cameraを1 viewport進める |
-| `camera-nudge-DIRECTION` | CameraをGrid 1 cell進める |
-| `move-DIRECTION` | focused WindowをGrid 1 cell移動する |
-| `resize-DIRECTION` | focused WindowをGrid 1 cell resizeする |
-| `place-next-DIRECTION` | 次に開くWindowの配置方向を1回指定する |
-| `camera-zoom VALUE` | Cameraを絶対倍率`0.1..=1.0`へ変更する |
-| `camera-center` | focused Windowが画面中央に来るようCameraを移動する |
-| `close` | focused Windowを閉じる |
-| `cycle-output` | active Outputを切り替える |
-| `toggle-floating` | tiled / floatingを切り替える |
-| `toggle-fullscreen` | fullscreenを切り替える |
-| `toggle-maximized` | maximizedを切り替える |
-| `toggle-window-size` | 初期幅と半幅を切り替える |
-| `toggle-opacity` | `opacity-toggle`の2値を切り替える |
-| `clear-opacity` | runtime opacity overrideを消す |
-| `toggle-blur` | blurを切り替える |
-| `toggle-cursor-wake` | カーソル航跡を切り替える |
-| `toggle-overview` | Overview倍率を切り替える |
-| `select-overview` | focused Windowを選択して通常倍率へ戻す |
-| `reload-config` | 設定を再読み込みする |
+| `focus-DIRECTION` | Move Focus |
+| `camera-DIRECTION` | Move Camera by one viewport |
+| `camera-nudge-DIRECTION` | Move Camera by one Grid cell |
+| `move-DIRECTION` | Move focused Window by one Grid cell |
+| `resize-DIRECTION` | Resize focused Window by one Grid cell |
+| `place-next-DIRECTION` | Set one-shot placement direction for the next Window |
+| `camera-zoom VALUE` | Set absolute zoom in `0.1..=1.0` |
+| `camera-center` | Center the focused Window without changing zoom |
+| `close` | Close focused Window |
+| `cycle-output` | Change active Output |
+| `toggle-floating` | Toggle tiled/floating |
+| `toggle-fullscreen` | Toggle fullscreen |
+| `toggle-maximized` | Toggle maximized |
+| `toggle-window-size` | Toggle initial width and half width |
+| `toggle-opacity` | Toggle the two `opacity-toggle` values |
+| `clear-opacity` | Clear runtime opacity override |
+| `toggle-blur` | Toggle blur |
+| `toggle-cursor-wake` | Toggle cursor wake |
+| `toggle-overview` | Toggle Overview zoom |
+| `select-overview` | Select focused Window and return to normal zoom |
+| `reload-config` | Reload configuration |
 
-`camera-zoom`だけは第3引数を取る。
+Only `camera-zoom` takes a third argument:
 
 ```kdl
 bind "Super+5" "camera-zoom" 0.5
 ```
 
-外部commandは`spawn` Actionでargvを直接指定する。shell文字列として解釈しないため、pipeや
-環境変数展開などが必要な場合だけ`sh -c`または`bash -c`を明示する。
+`spawn` takes argv directly. Use `sh -c` or `bash -c` explicitly for shell syntax.
 
-```kdl
-bind "Super+W" "spawn" "bash" "-c" "$HOME/.shellscript/select-wallpaper-kaname.sh"
-```
+## Window Rules
 
-## Window Rule
-
-`app-id`と`title`は完全一致であり、少なくとも一方が必要である。Propertyの優先順位は
-Default、matched Window Rule、runtime overrideの順である。複数Ruleが一致すると
-ファイル順に合成され、同じPropertyは後のRuleが上書きする。
-`*`や正規表現は解釈しない。全Windowへopacityを設定する場合は、全件一致Ruleではなく
-`appearance.opacity`を使う。
+`app-id` and `title` use exact matching and at least one is required. Precedence is Default, matched rules, then runtime override. Matching rules compose in file order, with later values overriding the same Property. Globs and regular expressions are not supported; use `appearance.opacity` for all Windows.
 
 ```kdl
 window-rule {
@@ -272,8 +200,4 @@ window-rule {
 }
 ```
 
-利用できるPropertyは`opacity`、`floating`、`blur`である。runtime overrideはWindowごとに
-保持され、設定ファイル自体を書き換えない。再適用、clear、寿命を含む詳細は
-[Window RuleとPropertyリファレンス](window-properties.md)を参照する。
-初回表示前にRuleで`floating=true`になった新規Windowは、起動直前にfocusされていた
-Windowへ重ねて配置する。reloadや手動のfloating切替では既存Windowを移動しない。
+Available Properties are `opacity`, `floating`, and `blur`. Runtime overrides are per Window and do not rewrite configuration. See [Window Rules and Properties](window-properties.md) for precedence, reload, clearing, and lifetime details. A new Window matched as floating before first presentation is initially placed over the previously focused Window; reloads and later floating changes do not move existing Windows.

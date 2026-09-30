@@ -1,18 +1,15 @@
 # Installation
 
-MioはNix flake packageとNixOS module、および汎用installerを提供している。moduleを有効にすると
-Wayland sessionがdisplay managerへ登録され、SDDM等のsession一覧からMioを選択できる。
-物理Multi-monitorの実機検証は完了していないため、既存desktopを削除せずに導入する。
+[日本語版](installation-jp.md)
+
+Mio provides a Nix flake package, a NixOS module, and a portable installer. Enabling the module registers a Wayland session that can be selected in SDDM and other display managers.
 
 > [!WARNING]
-> 現時点で実機動作を検証しているdistributionはNixOSだけである。Arch Linux、Debian / Ubuntu、
-> Fedoraおよびその他のLinux向け手順は、build dependencyと標準Wayland sessionの構成に基づいて
-> 整備しているが、そのdistribution上でのdirect session、portal、seat accessは未検証である。
-> 初回は既存desktop内でnested起動し、既存desktopを削除せずに試すこと。
+> Mio has currently been tested on real hardware only with NixOS. The Arch Linux, Debian/Ubuntu, Fedora, and generic Linux instructions are based on build dependencies and standard Wayland-session conventions, but direct sessions, portals, and seat access have not been verified on those distributions. Test Mio nested first and keep your existing desktop installed.
 
-## NixOSへ導入する
+## NixOS
 
-system flakeの`inputs`へMioを追加する。
+Add Mio to your system flake inputs and module list:
 
 ```nix
 {
@@ -27,21 +24,17 @@ system flakeの`inputs`へMioを追加する。
   outputs = { nixpkgs, mio, ... }: {
     nixosConfigurations.HOSTNAME = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
-      modules = [
-        mio.nixosModules.default
-        ./configuration.nix
-      ];
+      modules = [ mio.nixosModules.default ./configuration.nix ];
     };
   };
 }
 ```
 
-`configuration.nix`でmoduleとdisplay managerを有効にする。
+Enable Mio and your display manager:
 
 ```nix
 {
   services.displayManager.sddm.enable = true;
-
   programs.mio = {
     enable = true;
     xwayland.enable = true;
@@ -49,73 +42,58 @@ system flakeの`inputs`へMioを追加する。
 }
 ```
 
-`programs.mio.enable`はMio package、Wayland session、画面共有用portalを導入する。
-session起動処理はMioのWayland socketが準備できた後にDBus環境とportalを自動更新するため、
-ユーザーのKDLへportal用commandを書く必要はない。
-また、GNOME KeyringのSecrets componentを導入し、SDDM等のPAM loginで解除されたlogin
-keyringをMio sessionから利用可能にする。これはGitHub CLIやbrowser等の認証情報保存に使われ、
-GNOME desktop本体を導入または起動するものではない。Mioは全XDG autostartを開始しないため、
-KDLで明示した常駐applicationがこの対応によって二重起動することはない。
-標準設定を試せるよう、既定ではFoot、Waybar、Wofiも導入する。不要なら
-`programs.mio.recommendedPackages = false;`にする。X11互換が不要なら
-`programs.mio.xwayland.enable = false;`にする。
+`programs.mio.enable` installs Mio, its Wayland session, and the screen-sharing portal integration. Mio updates the D-Bus environment and portal after its Wayland socket is ready; no portal command is needed in KDL. It also makes an unlocked GNOME Keyring Secrets component available for credentials without installing or starting the GNOME desktop. Mio does not launch every XDG autostart entry.
 
-開発中の作業treeを直接使う場合、GitHub URLの代わりに次を指定できる。
+Foot, Waybar, and Wofi are installed by default. Set `programs.mio.recommendedPackages = false;` to omit them. Set `programs.mio.xwayland.enable = false;` if X11 compatibility is unnecessary.
+
+For a local development tree, use:
 
 ```nix
-mio.url = "path:/home/shin/Desktop/dev/mio";
+mio.url = "path:/home/user/path/to/mio";
 ```
 
-構成を反映した後に一度ログアウトし、SDDMのsession一覧から「Mio」を選ぶ。通常はOS全体の
-再起動までは不要である。display manager自体の更新が反映されない場合だけ再起動する。
+Apply the configuration, log out, and select **Mio**. A full reboot is normally unnecessary. Put user configuration at `$XDG_CONFIG_HOME/mio/config.kdl` or `$HOME/.config/mio/config.kdl`; Mio starts with built-in defaults when the file is absent.
 
-設定ファイルは`$XDG_CONFIG_HOME/mio/config.kdl`または`$HOME/.config/mio/config.kdl`へ置く。
-未配置でも組み込み既定値で起動する。repositoryの設定例を使う場合は、既存ファイルを確認して
-から`config/mio.kdl`をコピーする。
-
-追加の起動引数はmoduleからも指定できる。
+Additional session arguments can be set with:
 
 ```nix
-programs.mio.extraSessionArguments = [
-  "--config"
-  "/home/shin/.config/mio/config.kdl"
-];
+programs.mio.extraSessionArguments = [ "--config" "/path/to/config.kdl" ];
 ```
 
-個人のhome pathをsystem設定へ固定したくない場合は、このoptionを使わず標準設定pathを使う。
+### NixOS module options
 
-## Flake packageだけをbuildする
+| Option | Default | Meaning |
+|---|---:|---|
+| `programs.mio.enable` | `false` | Install Mio and register its session |
+| `programs.mio.package` | Mio flake package | Package launched by the session |
+| `programs.mio.extraSessionArguments` | `[]` | Additional compositor arguments |
+| `programs.mio.xwayland.enable` | `false` | Install and start xwayland-satellite |
+| `programs.mio.xwayland.display` | `":100"` | X display used by the satellite |
+| `programs.mio.portal.enable` | `true` | Enable the wlr screenshot/screencast portal |
+| `programs.mio.recommendedPackages` | `true` | Install Foot, Waybar, and Wofi |
 
-repository rootで実行する。
+## Build the flake package
 
 ```sh
 nix build .#mio
 ./result/bin/mio-compositor --version
-./result/bin/mio-compositor \
-  --config ./result/share/mio/config.kdl \
-  --check-config
+./result/bin/mio-compositor --config ./result/share/mio/config.kdl --check-config
 ```
 
-生成物には`mio-compositor`、`mioctl`、direct backend用の`mio-session`、設定例、
-`mio.desktop`が含まれる。
+The output contains `mio-compositor`, `mioctl`, `mio-session`, an example configuration, and `mio.desktop`.
 
-## NixOS開発環境
-
-repository rootで開発shellへ入る。
+## NixOS development shell
 
 ```sh
 nix-shell
 cargo build --workspace
 ```
 
-`shell.nix`はRust toolchainと、Smithayのwinit・DRM/KMS backendに必要なnative libraryを提供する。
-NixOSではこのshell外から直接binaryを実行すると、`libwayland.so`などを見つけられない場合がある。
+`shell.nix` supplies Rust and the native libraries required by the winit and DRM/KMS backends. On NixOS, binaries started outside this shell may fail to find libraries such as `libwayland.so`.
 
-## その他のLinux環境
+## Other Linux distributions
 
-Rust 1.85と、Wayland、xkbcommon、libinput、libseat、udev、GBM、EGL、OpenGLの開発libraryが
-必要になる。distributionごとのpackage名は異なる。依存を導入後、repository rootで実行する。
-以下は実機検証済みdistributionの一覧ではなく、source buildに必要なpackageの導入例である。
+Mio requires Rust 1.85 plus development packages for Wayland, xkbcommon, libinput, libseat, udev, GBM, EGL, OpenGL, DRM, and display-info. These commands are dependency examples, not a statement that Mio has been tested on each distribution.
 
 ### Arch Linux
 
@@ -133,9 +111,6 @@ sudo apt install build-essential git cargo pkg-config libwayland-dev libdrm-dev 
   libegl1-mesa-dev libgl1-mesa-dev libdisplay-info-dev
 ```
 
-distributionの`cargo`がRust 1.85より古い場合は、rustup等でrepositoryの
-`rust-toolchain.toml`を満たすtoolchainを導入する。
-
 ### Fedora
 
 ```sh
@@ -144,27 +119,14 @@ sudo dnf install gcc gcc-c++ make git cargo pkgconf-pkg-config wayland-devel \
   mesa-libgbm-devel mesa-libEGL-devel mesa-libGL-devel libdisplay-info-devel
 ```
 
-### その他のdistribution
-
-次のpkg-config moduleを提供するdevelopment packageを導入する。
+If the packaged Rust is older than 1.85, use rustup or another toolchain satisfying `rust-toolchain.toml`. On other distributions, install packages providing these pkg-config modules:
 
 ```text
 wayland-server  libdrm  libdisplay-info  gbm  libinput
 libseat         libudev xkbcommon        egl  gl
 ```
 
-正確なpackage名は各distributionのpackage検索を利用する。Mioのinstallerはpackage managerを
-自動操作しないため、安全に次のcommandで不足を確認できる。
-
-```sh
-./install.sh check
-sudo ./install.sh install
-```
-
-`check`は不足しているcommandとpkg-config moduleを表示し、Arch Linux、Debian/Ubuntu、Fedoraでは
-対応する依存packageの導入例も表示する。package managerを自動実行することはない。
-
-repositoryの取得から導入までは次のとおり。
+The installer never invokes a package manager. Check requirements and install with:
 
 ```sh
 git clone https://github.com/bakumugi777/mio-wm.git
@@ -173,7 +135,7 @@ cd mio-wm
 sudo ./install.sh install
 ```
 
-`install`は`cargo build --release --locked --workspace`を実行し、既定では次へ配置する。
+By default this builds the locked release workspace and installs:
 
 ```text
 /usr/local/bin/mio-compositor
@@ -183,71 +145,26 @@ sudo ./install.sh install
 /usr/local/share/wayland-sessions/mio.desktop
 ```
 
-配置先は`PREFIX`で変更でき、package作成用のstaging rootは`DESTDIR`で指定できる。
+Change the prefix or stage a package with:
 
 ```sh
 PREFIX="$HOME/.local" ./install.sh install
 DESTDIR="$PWD/pkg" PREFIX=/usr ./install.sh install
 ```
 
-ユーザーprefixへの導入はroot権限を必要としないが、display managerはログイン前に動作するため、
-ユーザー側の`share/wayland-sessions`を検索しない実装もある。SDDM等から確実に選択可能にする場合は
-`/usr`または`/usr/local`へのsystem-wide導入を使う。
+A user prefix needs no root access, but some display managers do not search user session directories before login. Use `/usr` or `/usr/local` for reliable system-wide session discovery.
 
-導入時に作成したmanifestだけを対象に削除できる。
+Uninstall only files recorded in the installation manifest:
 
 ```sh
 sudo ./install.sh uninstall
 PREFIX="$HOME/.local" ./install.sh uninstall
 ```
 
-別の`PREFIX`や`DESTDIR`で削除する場合は、導入時と同じ値を指定する。ユーザーの
-`$XDG_CONFIG_HOME/mio/config.kdl`は導入・削除ともに変更しない。
+Use the same `PREFIX` and `DESTDIR` as installation. The installer never changes the user's `config.kdl`.
 
-手動で開発buildだけを行う場合は従来どおり実行できる。
+## Desktop sessions outside NixOS
 
-```sh
-cargo build --workspace
-```
+`install.sh` installs a standard Wayland session entry usable by SDDM, GDM, greetd-based greeters, and other display managers that search that location. Distribution packages must provide seat access, portals, optional xwayland-satellite, and session applications such as a terminal, bar, launcher, notification daemon, IME, and lock screen. Test [nested startup](getting-started.md) first.
 
-生成物は`target/debug/mio-compositor`と`target/debug/mioctl`である。
-
-## 設定
-
-設定例を標準pathへ配置する場合は、手書きの既存設定を上書きしないよう確認してから
-`config/mio.kdl`を次のいずれかへ置く。
-
-```text
-$XDG_CONFIG_HOME/mio/config.kdl
-$HOME/.config/mio/config.kdl
-```
-
-開発中はcopyせず、`--config config/mio.kdl`でrepository内の設定例を直接指定できる。
-
-## NixOS以外でのDesktop session
-
-`install.sh`は標準のWayland session entryを配置するため、その検索先を読むSDDM、GDM、greetd系
-greeter等からMioを選択できる。seat access、portal、任意のxwayland-satellite、Foot・Waybar・Wofi
-等のsession構成要素はdistribution側で導入する。最初の確認には
-[Getting Started](getting-started.md)のnested起動を使う。
-
-direct backendには、logindまたはseatdを通じてDRM・input deviceへアクセスできるlogin sessionが
-必要である。手動でTTYから起動できてもdisplay managerから失敗する場合は、session entryの検索先、
-PAM/login session、seatd groupまたはlogindの状態を確認する。
-
-画面共有・OBS録画には`xdg-desktop-portal`と`xdg-desktop-portal-wlr`、X11 applicationには
-`xwayland-satellite`が別途必要である。launcher、bar、terminal、notification daemon、IME、
-lock screenはMio本体へ内蔵しないため、利用者が好みのprogramを導入してKDLの
-`spawn-at-startup`や`bind ... "spawn"`から起動する。
-
-## NixOS module option
-
-| Option | 既定値 | 内容 |
-|---|---:|---|
-| `programs.mio.enable` | `false` | packageとdisplay-manager sessionを有効化 |
-| `programs.mio.package` | flakeのMio package | sessionで起動するpackage |
-| `programs.mio.extraSessionArguments` | `[]` | compositorへ追加するargv |
-| `programs.mio.xwayland.enable` | `false` | xwayland-satelliteを導入・起動 |
-| `programs.mio.xwayland.display` | `":100"` | satelliteが使用するX display |
-| `programs.mio.portal.enable` | `true` | wlr screencast/screenshot portalを有効化 |
-| `programs.mio.recommendedPackages` | `true` | Foot、Waybar、Wofiを導入 |
+The direct backend needs a login session with DRM and input access through logind or seatd. Screen sharing and OBS require `xdg-desktop-portal` plus `xdg-desktop-portal-wlr`; X11 applications require `xwayland-satellite`.
