@@ -1,0 +1,129 @@
+{ self }:
+{ config, lib, pkgs, ... }:
+
+let
+  cfg = config.programs.mio;
+  sessionArguments =
+    [ "--backend" "udev" ]
+    ++ lib.optionals cfg.xwayland.enable [
+      "--xwayland-satellite"
+      "--xwayland-display"
+      cfg.xwayland.display
+    ]
+    ++ cfg.extraSessionArguments;
+  escapedSessionArguments = lib.escapeShellArgs sessionArguments;
+  sessionHelper = pkgs.writeShellScript "mio-session-helper" (''
+    ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
+      WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+  '' + lib.optionalString cfg.portal.enable ''
+    ${pkgs.systemd}/bin/systemctl --user daemon-reload
+    ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal-wlr.service
+    ${pkgs.systemd}/bin/systemctl --user restart mio-xdg-desktop-portal.service
+  '');
+  sessionLauncher = pkgs.writeShellScript "mio-session" ''
+    if keyring_environment="$(/run/wrappers/bin/gnome-keyring-daemon --start --components=secrets)"; then
+      eval "$keyring_environment"
+      export GNOME_KEYRING_CONTROL
+    else
+      echo "mio-session: failed to start the GNOME Keyring secrets component" >&2
+    fi
+
+    export MIO_SESSION_HELPER=${lib.escapeShellArg sessionHelper}
+    ${lib.optionalString cfg.portal.enable ''
+      cleanup_portal() {
+        ${pkgs.systemd}/bin/systemctl --user stop mio-xdg-desktop-portal.service >/dev/null 2>&1 || true
+      }
+      trap cleanup_portal EXIT
+    ''}
+    ${lib.getExe cfg.package} ${escapedSessionArguments}
+  '';
+  sessionPackage = pkgs.runCommand "mio-wayland-session" {
+    passthru.providedSessions = [ "mio" ];
+  } ''
+    install -Dm644 /dev/stdin $out/share/wayland-sessions/mio.desktop <<EOF
+    [Desktop Entry]
+    Name=Mio
+    Comment=The Mio Wayland compositor
+    Exec=${sessionLauncher}
+    Type=Application
+    DesktopNames=mio
+    EOF
+  '';
+in
+{
+  options.programs.mio = {
+    enable = lib.mkEnableOption "the Mio Wayland compositor and display-manager session";
+
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      defaultText = lib.literalExpression "inputs.mio.packages.${pkgs.stdenv.hostPlatform.system}.default";
+      description = "Mio package used by the desktop session.";
+    };
+
+    extraSessionArguments = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "--config" "/home/alice/.config/mio/config.kdl" ];
+      description = "Additional arguments passed to mio-compositor by the display-manager session.";
+    };
+
+    xwayland = {
+      enable = lib.mkEnableOption "X11 compatibility through xwayland-satellite";
+
+      display = lib.mkOption {
+        type = lib.types.strMatching ":[0-9]+";
+        default = ":100";
+        description = "X display allocated to xwayland-satellite.";
+      };
+    };
+
+    portal.enable = lib.mkEnableOption "xdg-desktop-portal-wlr integration" // {
+      default = true;
+    };
+
+    recommendedPackages = lib.mkEnableOption "Foot, Waybar, and Wofi for the example configuration" // {
+      default = true;
+    };
+  };
+
+  config = lib.mkIf cfg.enable {
+    environment.systemPackages =
+      [ cfg.package ]
+      ++ lib.optionals cfg.recommendedPackages [ pkgs.foot pkgs.waybar pkgs.wofi ]
+      ++ lib.optionals cfg.xwayland.enable [ pkgs.xwayland-satellite ];
+
+    services.displayManager.sessionPackages = [ sessionPackage ];
+    services.gnome.gnome-keyring.enable = lib.mkDefault true;
+    hardware.graphics.enable = lib.mkDefault true;
+
+    xdg.portal = lib.mkIf cfg.portal.enable {
+      enable = true;
+      config.mio = {
+        default = lib.mkDefault [ "gtk" ];
+        "org.freedesktop.impl.portal.ScreenCast" = lib.mkDefault [ "wlr" ];
+        "org.freedesktop.impl.portal.Screenshot" = lib.mkDefault [ "wlr" ];
+        "org.freedesktop.impl.portal.Secret" = lib.mkDefault [ "gnome-keyring" ];
+      };
+      extraPortals = [
+        pkgs.xdg-desktop-portal-gtk
+        pkgs.xdg-desktop-portal-wlr
+      ];
+    };
+
+    # The upstream broker requires graphical-session.target, while Mio keeps
+    # application startup explicit. Use a Mio-scoped broker service rather than
+    # activating the full desktop autostart target or modifying the upstream unit.
+    systemd.user.services.mio-xdg-desktop-portal = lib.mkIf cfg.portal.enable {
+      description = "Portal broker for the Mio session";
+      wants = [ "xdg-desktop-portal-wlr.service" ];
+      after = [ "xdg-desktop-portal-wlr.service" ];
+      serviceConfig = {
+        Type = "dbus";
+        BusName = "org.freedesktop.portal.Desktop";
+        ExecStart = "${pkgs.xdg-desktop-portal}/libexec/xdg-desktop-portal";
+        Slice = "session.slice";
+      };
+    };
+  };
+}

@@ -1,0 +1,13 @@
+# Project conventions
+- Prefer a few composable concepts: World, Grid, Window, Camera, Focus, Selection, Property, Action. Ask whether new behavior composes existing primitives before adding state/modes/options.
+- Dependency direction is Smithay/Wayland -> adapter -> mio-core.
+- One source of truth per semantic state. Distinguish logical/target/render values explicitly.
+- User-facing operations flow through Action; compound adapter behavior composes Actions.
+- Floating remains the same Window in the same World with Grid constraint relaxed. Overview is Camera zoom/transform.
+- Window appearance/behavior uses the shared Property system and precedence; runtime override is per Window.
+- KDL exposes high-level declarative options. Do not require future Yaldra or build parallel configuration systems.
+- Keep changes focused and reviewable; avoid unrelated refactors and later-phase feature expansion.
+- Avoid unnecessary `unwrap`/`expect` in long-lived compositor paths. Client/config errors should not crash or silently disappear.
+- Use upstream pinned Smithay without vendoring/modification unless explicitly instructed.
+- Update architecture/config/IPC/Smithay documentation when their contracts change. Preserve handwritten config files for temporary runtime changes.
+- Existing workspace Clippy policy enables `all` and `pedantic` warnings.

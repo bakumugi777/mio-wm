@@ -1,0 +1,25 @@
+/target/
+/result
+/result-*
+/.direnv/
+/.envrc.local
+
+# Runtime logs and crash dumps
+*.log
+*.ltg
+/core
+/core.*
+
+# Local editor and OS state
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local agent state and development-only reference material
+.agents/
+.codex/
+memo/
+contrib/

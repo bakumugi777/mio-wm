@@ -1,0 +1,22 @@
+[package]
+name = "mio-compositor"
+description = "Wayland and Smithay adapter for Mio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+default-run = "mio-compositor"
+
+[dependencies]
+calloop.workspace = true
+kdl.workspace = true
+mio-core.workspace = true
+smithay.workspace = true
+smithay-drm-extras.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+xkbcommon.workspace = true
+xcursor.workspace = true
+
+[lints]
+workspace = true

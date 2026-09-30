@@ -1,0 +1,153 @@
+// Mio configuration example.
+// Optional generated configuration. A missing include is ignored.
+// include "wallpaper.kdl"
+// Commands are executed once when Mio starts. Each quoted value is one argv item.
+spawn-at-startup "waybar"
+// spawn-at-startup "kaname" "--applications"
+
+output {
+    // Wayland output scale. Fractional values such as 1.25 are supported.
+    scale 1.0
+}
+
+appearance {
+    background-color "#FFFFFF"
+    window-border-width 1
+    window-border-color "#FFFFFF2E"
+    focus-indicator-width 320
+    focus-indicator-height 2
+    focus-indicator-color "#FFFFFF"
+    // Zero disables clipping.
+    corner-radius 16
+    // Logical pixels inset from every edge, scaled with Camera zoom on screen.
+    // Adjacent Windows have twice this gap.
+    // Maximized and fullscreen Windows are not inset.
+    gaps 25 
+    opacity 1.0
+    // Super+O alternates between these two values.
+    opacity-toggle 1.0 0.8
+}
+
+effects {
+    // Dual Kawase blur: more passes are smoother but cost more GPU work.
+    blur-passes 3
+    blur-offset 2.0
+    // Zero radius disables shadows. Offset is horizontal then vertical.
+    shadow-radius 16
+    shadow-offset 0 0
+    shadow-color "#00000040"
+    // Fast pointer movement leaves a short wake; slow precise movement stays quiet.
+    cursor-wake true
+    cursor-wake-threshold 1600
+    cursor-wake-strength 0.032
+    cursor-wake-width 8.5
+    // Milliseconds before an undisturbed wake becomes idle.
+    cursor-wake-duration 1400
+    // Water-like Window opening and closing transition.
+    window-transition "water"
+    window-transition-duration 420
+}
+
+animation {
+    // Zero disables animation; larger values settle more quickly.
+    speed 1.0
+}
+
+camera {
+    viewport 8 8
+}
+
+placement {
+    initial-size 8 8
+}
+
+mouse {
+    // Hide after this many milliseconds without pointer activity; zero disables it.
+    cursor-hide-delay-ms 3000
+}
+
+// Mouse input follows the same input -> Action model as keyboard binds.
+mouse-bind "right-drag" "camera-pan"
+mouse-bind "right-wheel" "camera-zoom"
+mouse-bind "right+left-drag" "move-window"
+mouse-bind "window-edge+left-drag" "resize-window"
+mouse-bind "right-click" "toggle-window-size" clicks=2
+mouse-bind "right+middle-click" "toggle-floating"
+mouse-bind "output-edge+middle-click" "place-next"
+mouse-bind "right+left-click" clicks=1 {
+    action "camera-center"
+    action "camera-zoom" 1.0
+}
+mouse-bind "right+left-click" "close" clicks=3
+
+// A short right-click within 24 logical pixels of an edge runs this argv directly.
+edge-command "bottom" "wofi" "--show" "drun"
+
+// Declaring any bind replaces the built-in binding set, so list every binding
+// that should remain available.
+bind "Super+Left" "focus-left"
+bind "Super+Right" "focus-right"
+bind "Super+Up" "focus-up"
+bind "Super+Down" "focus-down"
+bind "Super+H" "focus-left"
+bind "Super+L" "focus-right"
+bind "Super+K" "focus-up"
+bind "Super+J" "focus-down"
+// Absolute Camera zoom presets. Values may be changed within 0.1..=1.0.
+// Super+0 restores the maximum (normal) Camera zoom.
+bind "Super+1" "camera-zoom" 0.1
+bind "Super+2" "camera-zoom" 0.2
+bind "Super+3" "camera-zoom" 0.3
+bind "Super+4" "camera-zoom" 0.4
+bind "Super+5" "camera-zoom" 0.5
+bind "Super+6" "camera-zoom" 0.6
+bind "Super+7" "camera-zoom" 0.7
+bind "Super+8" "camera-zoom" 0.8
+bind "Super+9" "camera-zoom" 0.9
+bind "Super+0" "camera-zoom" 1.0
+bind "Super+Ctrl+Left" "camera-left"
+bind "Super+Ctrl+Right" "camera-right"
+bind "Super+Ctrl+Up" "camera-up"
+bind "Super+Ctrl+Down" "camera-down"
+bind "Super+Ctrl+H" "camera-left"
+bind "Super+Ctrl+L" "camera-right"
+bind "Super+Ctrl+K" "camera-up"
+bind "Super+Ctrl+J" "camera-down"
+bind "Super+Ctrl+Shift+H" "camera-nudge-left"
+bind "Super+Ctrl+Shift+L" "camera-nudge-right"
+bind "Super+Ctrl+Shift+K" "camera-nudge-up"
+bind "Super+Ctrl+Shift+J" "camera-nudge-down"
+bind "Super+Shift+Left" "move-left"
+bind "Super+Shift+Right" "move-right"
+bind "Super+Shift+Up" "move-up"
+bind "Super+Shift+Down" "move-down"
+bind "Super+Ctrl+Shift+Left" "resize-left"
+bind "Super+Ctrl+Shift+Right" "resize-right"
+bind "Super+Ctrl+Shift+Up" "resize-up"
+bind "Super+Ctrl+Shift+Down" "resize-down"
+// The next successfully opened Window consumes one of these directions.
+bind "Super+Shift+H" "place-next-left"
+bind "Super+Shift+L" "place-next-right"
+bind "Super+Shift+K" "place-next-up"
+bind "Super+Shift+J" "place-next-down"
+bind "Super+F" "toggle-floating"
+bind "Super+N" "cycle-output"
+bind "Super+Enter" "toggle-fullscreen"
+bind "Super+M" "toggle-maximized"
+bind "Super+Z" "toggle-window-size"
+bind "Super+Q" "close"
+bind "Super+O" "toggle-opacity"
+bind "Super+B" "toggle-blur"
+bind "Super+W" "toggle-cursor-wake"
+bind "Super+Shift+O" "clear-opacity"
+bind "Super+V" "toggle-overview"
+bind "Super+S" "select-overview"
+bind "Super+R" "reload-config"
+
+// Rules use an exact app-id match. The property is applied per Window.
+window-rule {
+    match app-id="foot"
+    opacity 1.0
+    floating false
+    blur false
+}

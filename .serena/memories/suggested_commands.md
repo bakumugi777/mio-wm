@@ -1,0 +1,11 @@
+# Suggested commands
+- Enter Nix development environment: `nix-shell`.
+- Build workspace: `cargo build --workspace`.
+- Validate distributed config: `cargo run -p mio-compositor -- --config config/mio.kdl --check-config`.
+- Nested run: `WINIT_UNIX_BACKEND=wayland RUST_LOG=info cargo run -p mio-compositor -- --config config/mio.kdl --command foot`.
+- Direct backend from a text VT: `RUST_LOG=info cargo run -p mio-compositor -- --backend udev --config config/mio.kdl --command foot`.
+- Graceful development shutdown: `cargo run -p mio-compositor --bin mioctl -- quit` (installed: `mioctl quit`).
+- Focused core tests: `cargo test -p mio-core`.
+- Full verification commands are in `mem:task_completion`.
+- Flake package: `nix build .#mio`; broader packaging validation: `nix flake check` when relevant.
+- Prefer `rg` / `rg --files` for project search.
