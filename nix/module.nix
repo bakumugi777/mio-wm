@@ -18,7 +18,8 @@ let
   '' + lib.optionalString cfg.portal.enable ''
     ${pkgs.systemd}/bin/systemctl --user daemon-reload
     ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal-wlr.service
-    ${pkgs.systemd}/bin/systemctl --user restart mio-xdg-desktop-portal.service
+    ${pkgs.systemd}/bin/systemctl --user start graphical-session.target
+    ${pkgs.systemd}/bin/systemctl --user restart xdg-desktop-portal.service
   '');
   sessionLauncher = pkgs.writeShellScript "mio-session" ''
     if keyring_environment="$(/run/wrappers/bin/gnome-keyring-daemon --start --components=secrets)"; then
@@ -31,7 +32,7 @@ let
     export MIO_SESSION_HELPER=${lib.escapeShellArg sessionHelper}
     ${lib.optionalString cfg.portal.enable ''
       cleanup_portal() {
-        ${pkgs.systemd}/bin/systemctl --user stop mio-xdg-desktop-portal.service >/dev/null 2>&1 || true
+        ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target >/dev/null 2>&1 || true
       }
       trap cleanup_portal EXIT
     ''}
@@ -111,19 +112,5 @@ in
       ];
     };
 
-    # The upstream broker requires graphical-session.target, while Mio keeps
-    # application startup explicit. Use a Mio-scoped broker service rather than
-    # activating the full desktop autostart target or modifying the upstream unit.
-    systemd.user.services.mio-xdg-desktop-portal = lib.mkIf cfg.portal.enable {
-      description = "Portal broker for the Mio session";
-      wants = [ "xdg-desktop-portal-wlr.service" ];
-      after = [ "xdg-desktop-portal-wlr.service" ];
-      serviceConfig = {
-        Type = "dbus";
-        BusName = "org.freedesktop.portal.Desktop";
-        ExecStart = "${pkgs.xdg-desktop-portal}/libexec/xdg-desktop-portal";
-        Slice = "session.slice";
-      };
-    };
   };
 }

@@ -693,10 +693,11 @@ desktop-session trust boundary and can access the protocols directly. This is no
 per-client authorization, so deployments must protect access to the session socket.
 Locked sessions reject capture requests.
 
-When a direct-backend request is pending, Mio renders the already assembled scene,
-excluding the pointer overlay, into a temporary GLES texture and feeds that
-framebuffer to the shared SHM readback implementation. The normal DRM scanout remains
-unchanged.
+When a direct-backend request is pending, Mio renders the already assembled scene into
+a temporary GLES texture and feeds that framebuffer to the shared SHM readback
+implementation. The pointer overlay is included only for requests carrying
+`PaintCursors` or `overlay_cursor`; cursor-free and cursor-bearing requests use
+separate temporary targets when they coexist. The normal DRM scanout remains unchanged.
 
 ## Phase 10 linux-dmabuf findings
 
