@@ -98,11 +98,20 @@ impl DataDeviceHandler for MioState {
 impl DndGrabHandler for MioState {
     fn dropped(
         &mut self,
-        _target: Option<smithay::input::dnd::DndTarget<'_, Self>>,
-        _validated: bool,
+        target: Option<smithay::input::dnd::DndTarget<'_, Self>>,
+        validated: bool,
         _seat: Seat<Self>,
-        _location: Point<f64, smithay::utils::Logical>,
+        location: Point<f64, smithay::utils::Logical>,
     ) {
+        let target_surface = target.map(|target| target.into_inner().id());
+        info!(
+            target: "mio_compositor::dnd",
+            ?target_surface,
+            validated,
+            x = location.x,
+            y = location.y,
+            "Wayland drag-and-drop finished"
+        );
         self.dnd_icon = None;
     }
 }
@@ -116,6 +125,12 @@ impl WaylandDndGrabHandler for MioState {
         serial: Serial,
         grab_type: GrabType,
     ) {
+        info!(
+            target: "mio_compositor::dnd",
+            ?grab_type,
+            has_icon = icon.is_some(),
+            "Wayland drag-and-drop requested"
+        );
         self.dnd_icon = icon.map(|surface| DndIcon {
             surface,
             offset: Point::default(),

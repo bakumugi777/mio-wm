@@ -79,6 +79,7 @@ struct PointerClickRequest {
 
 struct PointerFocusResult {
     target_window: Option<mio_core::WindowId>,
+    consume_click: bool,
 }
 
 fn configured_mouse_actions(actions: &[MouseAction]) -> impl Iterator<Item = ConfigAction> + '_ {
@@ -921,8 +922,14 @@ impl MioState {
             }
         };
         let serial = SERIAL_COUNTER.next_serial();
-        let PointerFocusResult { target_window } =
-            self.resolve_pointer_button_focus(state, position, replay_camera_press, serial);
+        let PointerFocusResult {
+            target_window,
+            consume_click,
+        } = self.resolve_pointer_button_focus(button, state, position, replay_camera_press, serial);
+        if consume_click {
+            self.suppressed_focus_click = true;
+            return;
+        }
 
         if self.handle_replayed_camera_click(
             replay_camera_press,
@@ -1041,6 +1048,7 @@ impl MioState {
 
     fn resolve_pointer_button_focus(
         &mut self,
+        button: u32,
         state: ButtonState,
         position: smithay::utils::Point<f64, smithay::utils::Logical>,
         replay_camera_press: Option<(u32, u32, Option<mio_core::WindowId>)>,
@@ -1067,6 +1075,8 @@ impl MioState {
             replay_camera_press.and_then(|(_, _, window)| window),
             release_window,
         );
+        let consume_click =
+            should_consume_focus_click(button, state, target_window, self.world.focused());
         if may_change_focus {
             self.activate_virtual_output_at(position);
             if let Some((surface, _)) = self.surface_under(position) {
@@ -1089,7 +1099,10 @@ impl MioState {
             }
         }
 
-        PointerFocusResult { target_window }
+        PointerFocusResult {
+            target_window,
+            consume_click,
+        }
     }
 
     fn finish_active_pointer_interaction(
@@ -1123,6 +1136,7 @@ impl MioState {
                 click_buttons,
                 bindings.window_click_buttons,
             )
+            || self.consume_suppressed_focus_click(button, state)
     }
 
     fn finish_edge_placement_release(&mut self, button: u32, state: ButtonState) -> bool {
@@ -1145,6 +1159,12 @@ impl MioState {
             );
         }
         true
+    }
+
+    fn consume_suppressed_focus_click(&mut self, button: u32, state: ButtonState) -> bool {
+        button == BTN_LEFT
+            && state == ButtonState::Released
+            && std::mem::take(&mut self.suppressed_focus_click)
     }
 
     fn finish_window_resize_release(
@@ -2213,6 +2233,17 @@ const fn closing_pointer_chord_needed(pointer_buttons_held: u8) -> bool {
     pointer_buttons_held != 0
 }
 
+fn should_consume_focus_click(
+    button: u32,
+    state: ButtonState,
+    target: Option<mio_core::WindowId>,
+    focused: Option<mio_core::WindowId>,
+) -> bool {
+    button == BTN_LEFT
+        && state == ButtonState::Pressed
+        && target.is_some_and(|id| focused != Some(id))
+}
+
 const fn window_resize_surface_allowed(is_popup: bool) -> bool {
     !is_popup
 }
@@ -2674,6 +2705,37 @@ mod edge_tests {
     fn short_right_click_stays_below_camera_drag_threshold() {
         assert!(!camera_drag_started(3.0, 4.0));
         assert!(camera_drag_started(6.0, 0.0));
+    }
+
+    #[test]
+    fn only_left_press_on_an_unfocused_window_is_consumed_for_focus() {
+        let focused = mio_core::WindowId::from_u64(1);
+        let target = mio_core::WindowId::from_u64(2);
+
+        assert!(should_consume_focus_click(
+            BTN_LEFT,
+            ButtonState::Pressed,
+            Some(target),
+            Some(focused)
+        ));
+        assert!(!should_consume_focus_click(
+            BTN_LEFT,
+            ButtonState::Pressed,
+            Some(focused),
+            Some(focused)
+        ));
+        assert!(!should_consume_focus_click(
+            BTN_LEFT,
+            ButtonState::Released,
+            Some(target),
+            Some(focused)
+        ));
+        assert!(!should_consume_focus_click(
+            BTN_RIGHT,
+            ButtonState::Pressed,
+            Some(target),
+            Some(focused)
+        ));
     }
 
     #[test]

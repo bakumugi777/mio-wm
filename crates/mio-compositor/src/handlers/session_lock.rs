@@ -32,6 +32,7 @@ impl SessionLockHandler for MioState {
         self.closing_pointer_chord = false;
         self.pending_pointer_click = None;
         self.suppressed_window_drag_releases = 0;
+        self.suppressed_focus_click = false;
         self.dnd_icon = None;
         let serial = SERIAL_COUNTER.next_serial();
         if let Some(pointer) = self

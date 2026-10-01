@@ -41,15 +41,6 @@ When cursor and cursor-free requests coexist, Mio renders separate capture
 targets from the same scene elements instead of changing the on-screen render
 or forcing the cursor into every client capture.
 
-## Pointer focus and Wayland drag-and-drop
-
-At the pinned revision, `DnDGrab` receives the focus passed to ordinary pointer
-motion and independently sends data-device enter, motion, leave, and drop events to
-that surface. The target does not need keyboard focus. The initiating client does,
-however, need the original pointer press and its serial. A compositor must therefore
-focus an unfocused Window without consuming that press; otherwise the client cannot
-start a Wayland drag from that Window.
-
 ## Render diagnostics and damage
 
 `desktop::space::render_output` returns `RenderOutputResult::damage` from its
