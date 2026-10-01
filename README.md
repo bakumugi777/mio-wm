@@ -3,6 +3,10 @@
     <img src="./mio-logo.png" alt="Mio logo" width="320">
   </p>
 
+
+https://github.com/user-attachments/assets/6c5abf94-06e9-474b-b595-3d0bda80ea90
+
+
 [日本語版](readme-jp.md)
 
 **Instead of switching workspaces, look across one world that extends without end.**
