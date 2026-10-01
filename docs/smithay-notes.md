@@ -29,6 +29,18 @@ the per-frame remaps so the focused Window remains topmost and `element_under` u
 the same order as rendering. This remains presentation state in the adapter; Core does
 not gain a second Window stack.
 
+## Cursor inclusion in output capture
+
+At the pinned revision, `ext-image-copy-capture-v1` exposes the session's
+`PaintCursors` option through `SessionRef::draw_cursor()`. Legacy
+`wlr-screencopy` carries the equivalent choice as the `overlay_cursor` integer
+on each capture request. Mio must retain that choice until the pending frame is
+fulfilled: the direct backend normally assigns the visible pointer to a
+separate cursor plane, so copying the primary framebuffer cannot add it later.
+When cursor and cursor-free requests coexist, Mio renders separate capture
+targets from the same scene elements instead of changing the on-screen render
+or forcing the cursor into every client capture.
+
 ## Render diagnostics and damage
 
 `desktop::space::render_output` returns `RenderOutputResult::damage` from its
@@ -681,10 +693,11 @@ desktop-session trust boundary and can access the protocols directly. This is no
 per-client authorization, so deployments must protect access to the session socket.
 Locked sessions reject capture requests.
 
-When a direct-backend request is pending, Mio renders the already assembled scene,
-excluding the pointer overlay, into a temporary GLES texture and feeds that
-framebuffer to the shared SHM readback implementation. The normal DRM scanout remains
-unchanged.
+When a direct-backend request is pending, Mio renders the already assembled scene into
+a temporary GLES texture and feeds that framebuffer to the shared SHM readback
+implementation. The pointer overlay is included only for requests carrying
+`PaintCursors` or `overlay_cursor`; cursor-free and cursor-bearing requests use
+separate temporary targets when they coexist. The normal DRM scanout remains unchanged.
 
 ## Phase 10 linux-dmabuf findings
 
