@@ -25,6 +25,7 @@
   screenshot・OBS録画、xwayland-satelliteを利用できる
 - **宣言的なKDL設定**: Window Rule、外観、effect、keybind、mouse gesture、起動commandを
   一つの設定形式で管理する
+- **小さいアイドル時メモリ使用量**: 作者環境では、アイドル時の澪本体のRAM使用は100 MBです
 
 澪には従来型のワークスペースがありません。ウィンドウは一つの連続した2次元Worldに
 配置され、画面はそのWorldを見るCameraとして扱われます。

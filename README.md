@@ -27,6 +27,8 @@ be comfortable with either a keyboard or a mouse.
   portal-based screenshots and OBS capture, and xwayland-satellite
 - **Declarative KDL configuration:** configure window rules, appearance, effects,
   key bindings, mouse gestures, and startup commands in one format
+- **Low idle memory use:** in the author's environment, Mio itself uses 100 MB of RAM
+  when idle
 
 Mio does not have traditional workspaces. Windows exist in one continuous 2D World,
 and the screen is treated as a Camera looking into that World.
