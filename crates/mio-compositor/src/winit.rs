@@ -541,14 +541,12 @@ pub fn init(event_loop: &mut EventLoop<CalloopData>, data: &mut CalloopData) -> 
                                 &framebuffer,
                                 (size.w, size.h).into(),
                                 state.presentation_clock.now().into(),
-                                None,
                             );
                             state.fulfill_image_copy_captures(
                                 renderer,
                                 &framebuffer,
                                 (size.w, size.h).into(),
                                 state.presentation_clock.now().into(),
-                                None,
                             )
                         }
                         Err(error) => {

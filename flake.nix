@@ -60,7 +60,7 @@
             test "${testSystem.config.xdg.portal.config.mio."org.freedesktop.impl.portal.ScreenCast"}" = wlr
             test "${testSystem.config.xdg.portal.config.mio."org.freedesktop.impl.portal.Secret"}" = gnome-keyring
             test "${toString testSystem.config.services.gnome.gnome-keyring.enable}" = 1
-            test "${toString testSystem.config.xdg.portal.enable}" = 1
+            test "${testSystem.config.systemd.user.services.mio-xdg-desktop-portal.serviceConfig.BusName}" = org.freedesktop.portal.Desktop
             touch $out
           '';
         });

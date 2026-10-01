@@ -28,7 +28,6 @@ const BYTES_PER_PIXEL: i32 = 4;
 pub(crate) struct FrameData {
     region: Rectangle<i32, BufferCoord>,
     output_origin: smithay::utils::Point<i32, BufferCoord>,
-    overlay_cursor: bool,
     used: Mutex<bool>,
 }
 
@@ -39,7 +38,6 @@ pub(crate) struct PendingScreencopy {
     region: Rectangle<i32, BufferCoord>,
     output_origin: smithay::utils::Point<i32, BufferCoord>,
     with_damage: bool,
-    overlay_cursor: bool,
 }
 
 pub(crate) fn create_global(display: &DisplayHandle) -> GlobalId {
@@ -77,14 +75,12 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for MioState {
         match request {
             zwlr_screencopy_manager_v1::Request::CaptureOutput {
                 frame,
-                overlay_cursor,
+                overlay_cursor: _,
                 output,
-            } => {
-                state.create_screencopy_frame(frame, &output, None, overlay_cursor != 0, data_init);
-            }
+            } => state.create_screencopy_frame(frame, &output, None, data_init),
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
-                overlay_cursor,
+                overlay_cursor: _,
                 output,
                 x,
                 y,
@@ -94,7 +90,6 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for MioState {
                 frame,
                 &output,
                 Some(Rectangle::new((x, y).into(), (width, height).into())),
-                overlay_cursor != 0,
                 data_init,
             ),
             zwlr_screencopy_manager_v1::Request::Destroy => {}
@@ -109,7 +104,6 @@ impl MioState {
         frame: New<ZwlrScreencopyFrameV1>,
         output_resource: &WlOutput,
         requested_region: Option<Rectangle<i32, Logical>>,
-        overlay_cursor: bool,
         data_init: &mut DataInit<'_, Self>,
     ) {
         let output = Output::from_resource(output_resource)
@@ -168,7 +162,6 @@ impl MioState {
             FrameData {
                 region,
                 output_origin,
-                overlay_cursor,
                 used: Mutex::new(false),
             },
         );
@@ -304,7 +297,6 @@ impl MioState {
             region: data.region,
             output_origin: data.output_origin,
             with_damage,
-            overlay_cursor: data.overlay_cursor,
         });
         info!(
             target: "mio_compositor::screencopy",
@@ -325,19 +317,12 @@ impl MioState {
         framebuffer: &R::Framebuffer<'_>,
         framebuffer_size: Size<i32, BufferCoord>,
         timestamp: Duration,
-        cursor_filter: Option<bool>,
     ) -> bool
     where
         R: ExportMem,
     {
-        let mut remaining = Vec::new();
-        let mut fulfilled_any = false;
-        for pending in std::mem::take(&mut self.pending_screencopies) {
-            if cursor_filter.is_some_and(|expected| pending.overlay_cursor != expected) {
-                remaining.push(pending);
-                continue;
-            }
-            fulfilled_any = true;
+        let fulfilled_any = !self.pending_screencopies.is_empty();
+        for pending in self.pending_screencopies.drain(..) {
             if !pending.frame.is_alive() {
                 if pending.buffer.is_alive() {
                     pending.buffer.release();
@@ -417,14 +402,7 @@ impl MioState {
                 pending.buffer.release();
             }
         }
-        self.pending_screencopies = remaining;
         fulfilled_any
-    }
-
-    pub(crate) fn has_pending_screencopy_variant(&self, overlay_cursor: bool) -> bool {
-        self.pending_screencopies
-            .iter()
-            .any(|pending| pending.overlay_cursor == overlay_cursor)
     }
 }
 

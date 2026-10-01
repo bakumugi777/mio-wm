@@ -26,7 +26,6 @@ use crate::state::MioState;
 pub(crate) struct PendingImageCopyCapture {
     frame: Frame,
     region: Rectangle<i32, BufferCoord>,
-    paint_cursor: bool,
 }
 
 impl ImageCaptureSourceHandler for MioState {}
@@ -101,11 +100,7 @@ impl ImageCopyCaptureHandler for MioState {
             mode.size.to_logical(1).to_buffer(1, Transform::Normal),
         );
         self.pending_image_copy_captures
-            .push(PendingImageCopyCapture {
-                frame,
-                region,
-                paint_cursor: session.draw_cursor(),
-            });
+            .push(PendingImageCopyCapture { frame, region });
         info!(
             target: "mio_compositor::image_copy_capture",
             width = region.size.w,
@@ -134,19 +129,12 @@ impl MioState {
         framebuffer: &R::Framebuffer<'_>,
         framebuffer_size: smithay::utils::Size<i32, BufferCoord>,
         timestamp: Duration,
-        cursor_filter: Option<bool>,
     ) -> bool
     where
         R: ExportMem,
     {
-        let mut remaining = Vec::new();
-        let mut fulfilled_any = false;
-        for pending in std::mem::take(&mut self.pending_image_copy_captures) {
-            if cursor_filter.is_some_and(|expected| pending.paint_cursor != expected) {
-                remaining.push(pending);
-                continue;
-            }
-            fulfilled_any = true;
+        let fulfilled_any = !self.pending_image_copy_captures.is_empty();
+        for pending in self.pending_image_copy_captures.drain(..) {
             let read_region = Rectangle::new(
                 (
                     pending.region.loc.x,
@@ -232,13 +220,6 @@ impl MioState {
                 }
             }
         }
-        self.pending_image_copy_captures = remaining;
         fulfilled_any
-    }
-
-    pub(crate) fn has_pending_image_copy_variant(&self, paint_cursor: bool) -> bool {
-        self.pending_image_copy_captures
-            .iter()
-            .any(|pending| pending.paint_cursor == paint_cursor)
     }
 }

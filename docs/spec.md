@@ -562,9 +562,7 @@ Output-local regionを扱い、regionは
 Output boundsへclipする。clientが渡すbufferは広告したARGB8888、寸法、strideと一致する
 場合のみ使用する。`copy_with_damage`は初期段階では全capture領域をdamageとして返す。
 
-capture要求がcursor描画を指定しない場合、capture用sceneはpointer overlayを含めない。
-標準経路の`PaintCursors`またはlegacy経路の`overlay_cursor`が指定された場合だけpointerを
-capture用sceneへ合成する。cursor有無の要求が同時に存在する場合は別々の一時targetへ描画する。
+capture用sceneはpointer overlayを含めず、`overlay_cursor`による追加合成も行わない。
 直接backendでは最終sceneを一時GLES targetへ描画し、既存のSHM readback経路へ渡す。
 通常のDRM scanoutは変更しない。sandbox化されたapplicationはportalの画面選択を経由する。
 通常Wayland socketへ直接接続できる非sandbox clientは同じdesktop sessionの信頼領域として

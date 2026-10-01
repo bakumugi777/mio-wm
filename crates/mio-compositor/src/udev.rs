@@ -762,7 +762,6 @@ fn fulfill_direct_screencopies(
     size: smithay::utils::Size<i32, Physical>,
     output_scale: f64,
     background: [f32; 4],
-    paint_cursor: bool,
 ) -> Result<(), smithay::backend::renderer::gles::GlesError> {
     let buffer_size = (size.w, size.h).into();
     let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Argb8888, buffer_size)?;
@@ -779,14 +778,12 @@ fn fulfill_direct_screencopies(
         &target,
         buffer_size,
         state.presentation_clock.now().into(),
-        Some(paint_cursor),
     );
     state.fulfill_image_copy_captures(
         renderer,
         &target,
         buffer_size,
         state.presentation_clock.now().into(),
-        Some(paint_cursor),
     );
     Ok(())
 }
@@ -1212,28 +1209,15 @@ impl DirectBackend {
         );
         if !state.pending_screencopies.is_empty() || state.has_pending_image_copy_captures() {
             if let Some(mode) = output.current_mode() {
-                let without_cursor = state.has_pending_screencopy_variant(false)
-                    || state.has_pending_image_copy_variant(false);
-                let with_cursor = state.has_pending_screencopy_variant(true)
-                    || state.has_pending_image_copy_variant(true);
-                for (paint_cursor, capture_elements) in [
-                    (false, &elements[cursor_element_count..]),
-                    (true, elements.as_slice()),
-                ] {
-                    if (paint_cursor && !with_cursor) || (!paint_cursor && !without_cursor) {
-                        continue;
-                    }
-                    if let Err(error) = fulfill_direct_screencopies(
-                        state,
-                        &mut self.renderer,
-                        capture_elements,
-                        mode.size,
-                        output_scale,
-                        appearance.background_color,
-                        paint_cursor,
-                    ) {
-                        warn!(%error, paint_cursor, "failed to render direct-backend screencopy");
-                    }
+                if let Err(error) = fulfill_direct_screencopies(
+                    state,
+                    &mut self.renderer,
+                    &elements[cursor_element_count..],
+                    mode.size,
+                    output_scale,
+                    appearance.background_color,
+                ) {
+                    warn!(%error, "failed to render direct-backend screencopy");
                 }
             }
         }
