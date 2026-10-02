@@ -75,6 +75,7 @@ uninstallation.
 |---|---|
 | NixOS | Flake input and `mio.nixosModules.default` |
 | Nix / NixOS trial | `nix build .#mio` or `nix develop` |
+| Guix / Guix System | `guix build -f guix.scm` or `guix package -f guix.scm` |
 | Arch Linux | Install build dependencies with pacman, then use `install.sh` |
 | Debian / Ubuntu | Install build dependencies with apt, then use `install.sh` |
 | Fedora | Install build dependencies with dnf, then use `install.sh` |

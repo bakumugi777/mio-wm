@@ -91,6 +91,38 @@ cargo build --workspace
 
 `shell.nix` supplies Rust and the native libraries required by the winit and DRM/KMS backends. On NixOS, binaries started outside this shell may fail to find libraries such as `libwayland.so`.
 
+## Guix and Guix System
+
+The repository contains a reproducible Guix package definition in `guix.scm`.
+It reads the exact crate versions and checksums from `Cargo.lock`, fetches the
+pinned Smithay revision as a fixed-output source, and builds Cargo offline.
+
+Build the package from a checkout:
+
+```sh
+git clone https://github.com/bakumugi777/mio-wm.git
+cd mio-wm
+guix build -f guix.scm
+```
+
+Install it in the current Guix profile:
+
+```sh
+guix package --install-from-file=guix.scm
+```
+
+The package contains `mio-compositor`, `mioctl`, `mio-session`, the example
+configuration, and `share/wayland-sessions/mio.desktop`. A per-user profile is
+enough for command-line or nested use. Display managers usually discover
+sessions from a system profile, so Guix System users should include the package
+returned by `guix.scm` in `packages` in their operating-system configuration.
+Seat access, a display manager, portals, optional `xwayland-satellite`, and
+session applications remain system configuration concerns; this package does
+not silently enable services.
+
+Mio has not yet been tested on Guix System hardware. Test a nested session first
+and keep another working desktop session installed.
+
 ## Other Linux distributions
 
 Mio requires Rust 1.85 plus development packages for Wayland, xkbcommon, libinput, libseat, udev, GBM, EGL, OpenGL, DRM, and display-info. These commands are dependency examples, not a statement that Mio has been tested on each distribution.

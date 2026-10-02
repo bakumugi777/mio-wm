@@ -113,6 +113,36 @@ cargo build --workspace
 `shell.nix`はRust toolchainと、Smithayのwinit・DRM/KMS backendに必要なnative libraryを提供する。
 NixOSではこのshell外から直接binaryを実行すると、`libwayland.so`などを見つけられない場合がある。
 
+## Guix / Guix Systemへ導入する
+
+repositoryには再現可能なGuix package定義`guix.scm`を含めている。これは`Cargo.lock`から
+crateの正確なversionとchecksumを読み取り、固定されたSmithay revisionもfixed-output source
+として取得するため、Cargoのcompile自体はnetworkへ接続せずに行われる。
+
+checkoutからpackageをbuildする。
+
+```sh
+git clone https://github.com/bakumugi777/mio-wm.git
+cd mio-wm
+guix build -f guix.scm
+```
+
+現在のGuix profileへ導入する場合は次を使う。
+
+```sh
+guix package --install-from-file=guix.scm
+```
+
+packageには`mio-compositor`、`mioctl`、`mio-session`、設定例、および
+`share/wayland-sessions/mio.desktop`が含まれる。user profileへの導入だけでもcommand lineや
+nested sessionでは利用できる。一方、display managerは通常system profileのsession entryを
+検索するため、Guix Systemでは`guix.scm`が返すpackageをoperating-system設定の`packages`へ
+追加する。seat access、display manager、portal、任意の`xwayland-satellite`、およびsession内で
+使うapplicationはGuix System側で構成する。packageを導入しただけでserviceを暗黙に有効化はしない。
+
+Guix Systemでの実機動作は未検証である。最初はnested sessionで確認し、動作する既存desktopを
+残したまま試すこと。
+
 ## その他のLinux環境
 
 Rust 1.85と、Wayland、xkbcommon、libinput、libseat、udev、GBM、EGL、OpenGLの開発libraryが

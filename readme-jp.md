@@ -64,6 +64,7 @@
 |---|---|
 | NixOS | flake inputと`mio.nixosModules.default` |
 | Nix / NixOSで試用 | `nix build .#mio`または`nix develop` |
+| Guix / Guix System | `guix build -f guix.scm`または`guix package -f guix.scm` |
 | Arch Linux | build依存をpacmanで導入後、`install.sh` |
 | Debian / Ubuntu | build依存をaptで導入後、`install.sh` |
 | Fedora | build依存をdnfで導入後、`install.sh` |
