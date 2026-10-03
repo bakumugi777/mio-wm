@@ -31,6 +31,7 @@ use smithay::{
         input::InputEvent,
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
+            damage::{Error as OutputDamageTrackerError, OutputDamageTracker},
             element::{
                 memory::{MemoryRenderBuffer, MemoryRenderBufferRenderElement},
                 solid::SolidColorRenderElement,
@@ -39,8 +40,7 @@ use smithay::{
                 AsRenderElements, Id, Kind,
             },
             gles::{GlesRenderer, GlesTexture},
-            utils::draw_render_elements,
-            Bind, Frame, ImportDma, ImportEgl, ImportMemWl, Offscreen, Renderer,
+            Bind, ImportDma, ImportEgl, ImportMemWl, Offscreen, Renderer,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{primary_gpu, UdevBackend, UdevEvent},
@@ -767,13 +767,15 @@ fn fulfill_direct_screencopies(
     let buffer_size = (size.w, size.h).into();
     let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Argb8888, buffer_size)?;
     let mut target = renderer.bind(&mut texture)?;
-    {
-        let mut frame = renderer.render(&mut target, size, Transform::Normal)?;
-        let damage = Rectangle::from_size(size);
-        frame.clear(background.into(), &[damage])?;
-        draw_render_elements(&mut frame, output_scale, elements, &[damage])?;
-        frame.finish().map(drop)?;
-    }
+    let mut damage_tracker = OutputDamageTracker::new(size, output_scale, Transform::Normal);
+    damage_tracker
+        .render_output(renderer, &mut target, 0, elements, background)
+        .map_err(|error| match error {
+            OutputDamageTrackerError::Rendering(error) => error,
+            OutputDamageTrackerError::OutputNoMode(_) => {
+                unreachable!("a static screencopy damage tracker always has an output mode")
+            }
+        })?;
     state.fulfill_screencopies(
         renderer,
         &target,

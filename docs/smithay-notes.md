@@ -980,6 +980,9 @@ inverse Output transform to obtain the framebuffer readback rectangle. Treating 
 request as buffer coordinates, or applying the transform in the forward direction,
 shifts and shrinks grim selections at scales such as 1.25.
 The direct backend redraws the scene into a temporary physical-size framebuffer before
-readback. `draw_render_elements` must receive the Output's fractional scale for that
-redraw; using `1.0` shrinks the scene while the readback rectangle remains correctly
-scaled, making a grim/slurp selection capture content displaced to its right.
+readback. That redraw must use a static `OutputDamageTracker` with buffer age zero and
+the Output's fractional scale. Smithay's simpler `draw_render_elements` helper calls
+`draw` directly without `capture_framebuffer` or an effect cache, so backdrop blur and
+other framebuffer effects disappear from recordings even though ordinary surfaces are
+present. Using scale `1.0` also shrinks the scene while the readback rectangle remains
+correctly scaled, making a grim/slurp selection capture content displaced to its right.
